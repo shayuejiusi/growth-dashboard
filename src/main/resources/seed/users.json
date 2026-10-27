@@ -1,0 +1,5 @@
+[
+  {"username": "admin",   "name": "系统管理员", "level": 1, "salt": "s1", "passwordHash": "f769f6450ba0efa1f45a898a42c691f9110d9f9e3ca365ffa50318795c7682bf", "assessmentStatus": "NONE"},
+  {"username": "manager", "name": "部门主管",   "level": 2, "salt": "s2", "passwordHash": "a94d90494dfa39a21f10075b1d24317bfa22365689745e0b2b291e3e913dada5", "assessmentStatus": "NONE"},
+  {"username": "staff",   "name": "普通员工",   "level": 3, "salt": "s3", "passwordHash": "975cf258390fd238586ed9e79592983d4d2d4219d999a6a604742c37002ea380", "assessmentStatus": "NONE"}
+]

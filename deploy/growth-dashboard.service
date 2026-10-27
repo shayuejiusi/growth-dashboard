@@ -1,0 +1,24 @@
+[Unit]
+Description=Personal Growth Dashboard (Spring Boot)
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=dashboard
+Group=dashboard
+WorkingDirectory=/opt/growth-dashboard
+EnvironmentFile=/opt/growth-dashboard/app.env
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -jar /opt/growth-dashboard/growth-dashboard-1.0.0.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=10
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+{
+  "name": "growth-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "个人工作与能力提升看板 (Java 17 + Spring Boot 3)",
+  "scripts": {
+    "dev": "\"C:\\Users\\22580\\.jdks\\ms-17.0.18\\bin\\java\" -jar target/growth-dashboard-1.0.0.jar",
+    "build": "set JAVA_HOME=C:\\Users\\22580\\.jdks\\ms-17.0.18&& ..\\tools-maven\\bin\\mvn -q -B package -DskipTests"
+  }
+}

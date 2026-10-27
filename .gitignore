@@ -1,0 +1,34 @@
+# Build outputs
+target/
+frontend/dist/
+frontend/build/
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Runtime data and logs
+data/
+*.log
+*.lock.db
+
+# Local environment and secrets
+.env
+.env.local
+.env.*.local
+deploy/server-package/app.env
+
+# IDE and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Agent scratch, snapshots and visual drafts
+.superpowers/
+
+# Test artifacts
+frontend/playwright-report/
+frontend/test-results/
+frontend/coverage/

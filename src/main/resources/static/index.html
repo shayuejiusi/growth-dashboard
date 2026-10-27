@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人工作与能力提升看板</title>
+<link rel="stylesheet" href="styles.css?v=20261010b">
+<script src="vendor/echarts.min.js"></script>
+</head>
+<body>
+
+<!-- ========== 登录页 ========== -->
+<div class="login-mask" id="loginMask">
+  <div class="login-box">
+    <h1>🚀 个人工作与能力提升看板</h1>
+    <p class="login-sub">请登录后使用</p>
+    <div style="margin-bottom:12px"><label>用户名</label><input id="loginUser" placeholder="用户名" autocomplete="username"></div>
+    <div style="margin-bottom:16px"><label>密码</label><input id="loginPass" type="password" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button style="width:100%" onclick="doLogin()">登 录</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
+<div class="grid" id="mainGrid" style="display:none">
+
+  <!-- ========== 1. 今日驾驶舱（三级可访问） ========== -->
+  <section class="card span-12" id="cockpit" data-max-level="3">
+    <div class="cockpit-head">
+      <h1>🚀 今日驾驶舱</h1>
+      <span class="time" id="nowTime"></span>
+      <span style="flex:1"></span>
+      <span class="badge" id="aiBadge">AI 状态检测中</span>
+      <span class="badge on" id="userBadge"></span>
+      <button class="ghost small" onclick="refreshAll()">🔄 刷新</button>
+      <button class="ghost small" onclick="doLogout()">退出</button>
+    </div>
+    <div class="stat-cards" id="statCards"></div>
+    <div class="cockpit-cols">
+      <div class="sub-block">
+        <h3>🎯 今日最重要的 3 件事</h3>
+        <div id="top3"></div>
+      </div>
+      <div class="sub-block">
+        <h3>🧭 能力评估</h3>
+        <div id="cockpitAssessment"></div>
+      </div>
+    </div>
+    <div class="focus-tip" id="focusNow"></div>
+  </section>
+
+  <!-- ========== 2. 工作任务管理器（三级可访问） ========== -->
+  <section class="card span-6 task-card" data-max-level="3">
+    <h2><span class="icon">✅</span>工作任务管理器<span class="spacer"></span>
+      <span class="task-count" id="taskCount"></span>
+    </h2>
+    <div class="task-tabs" id="taskTabs">
+      <button data-view="today" class="active" onclick="loadTasks('today',this)">今日待办</button>
+      <button data-view="daily" onclick="loadTasks('daily',this)">每日必做</button>
+      <button data-view="weekly" onclick="loadTasks('weekly',this)">每周必做</button>
+      <button data-view="week" onclick="loadTasks('week',this)">本周待办</button>
+      <button data-view="overdue" onclick="loadTasks('overdue',this)">逾期任务</button>
+      <button data-view="high" onclick="loadTasks('high',this)">高优先级</button>
+      <button data-view="report" onclick="loadTasks('report',this)">需向领导汇报</button>
+      <button data-view="done" onclick="loadTasks('done',this)">已完成</button>
+      <button data-view="all" onclick="loadTasks('all',this)">全部</button>
+    </div>
+    <div class="task-actions">
+      <button class="btn-black" onclick="openTaskForm()">新增任务</button>
+      <button class="btn-outline" onclick="openQuickAdd()">快速新增任务<span class="red-dot"></span></button>
+      <button class="btn-danger-text" onclick="clearAllTasks()">清空</button>
+      <button class="btn-outline" onclick="backupTasks()">一键备份</button>
+    </div>
+    <div class="scroll-list" id="taskList"></div>
+  </section>
+
+  <!-- ========== 3. 待办提醒中心（三级可访问） ========== -->
+  <section class="card span-6" data-max-level="3">
+    <h2><span class="icon">🔔</span>待办提醒中心<span class="spacer"></span>
+      <span class="badge" id="remPhase"></span>
+      <button class="ghost small" onclick="loadReminders()">🔄</button>
+    </h2>
+    <div class="scroll-list" style="max-height:420px" id="reminders"></div>
+  </section>
+
+  <!-- ========== 4. 能力成长地图（二级及以上） ========== -->
+  <section class="card span-6" data-max-level="2">
+    <h2><span class="icon">🧭</span>能力成长地图<span class="spacer"></span>
+      <button class="small" onclick="analyzeCapabilities()">🤖 AI 重新评估</button>
+    </h2>
+    <div id="radar"></div>
+    <div class="scroll-list" style="max-height:280px" id="dimList"></div>
+  </section>
+
+  <!-- ========== 5. 每日精选（二级及以上） ========== -->
+  <section class="card span-6" data-max-level="2">
+    <h2><span class="icon">📖</span>每日精选<span class="spacer"></span>
+      <span class="badge" id="contentDate"></span>
+      <button class="ghost small" onclick="refreshContent()">🤖 AI 换一批</button>
+    </h2>
+    <div class="scroll-list" style="max-height:560px" id="dailyContent"></div>
+  </section>
+
+  <!-- ========== 6. 能力评估（二级及以上；跳过后不可用） ========== -->
+  <section class="card span-12" data-max-level="2" id="assessmentCard">
+    <h2><span class="icon">📝</span>能力评估<span class="spacer"></span>
+      <span class="badge" id="assessBadge"></span>
+    </h2>
+    <div id="assessmentBody"></div>
+  </section>
+
+  <!-- ========== 7. 账号管理（仅一级） ========== -->
+  <section class="card span-12" data-max-level="1" id="adminCard">
+    <h2><span class="icon">🛠</span>账号管理<span class="spacer"></span>
+      <span class="badge">仅一级权限</span>
+      <button class="ghost small" onclick="loadUsers()">🔄</button>
+    </h2>
+    <div class="form-row" style="align-items:flex-end">
+      <div><label>用户名</label><input id="nuName" placeholder="2-20 位字母/数字/下划线"></div>
+      <div><label>姓名</label><input id="nuDisplay" placeholder="显示姓名"></div>
+      <div><label>权限等级</label><select id="nuLevel"><option value="1">一级（全部）</option><option value="2" selected>二级（除复盘与人才筛选）</option><option value="3">三级（驾驶舱/任务/提醒）</option></select></div>
+      <div><label>初始密码</label><input id="nuPass" type="password" placeholder="至少 6 位"></div>
+      <div style="flex:0 0 auto"><button onclick="addUser()">＋ 添加用户</button></div>
+    </div>
+    <div id="userTable"></div>
+  </section>
+
+  <!-- ========== 8. 日复盘与人才筛选（仅一级） ========== -->
+  <section class="card span-12" data-max-level="1">
+    <h2><span class="icon">🌙</span>日复盘与人才筛选<span class="spacer"></span>
+      <button class="small" onclick="generateReview()">🤖 生成今日复盘</button>
+    </h2>
+    <div class="review-cols">
+      <div>
+        <div class="ai-output" id="reviewOutput"><div class="empty">点击「生成今日复盘」，基于当日任务数据自动生成复盘草稿</div></div>
+      </div>
+      <div>
+        <div class="section-title">👥 人才九宫格（绩效 × 潜力）</div>
+        <div class="form-row">
+          <div><select id="personSelect"></select></div>
+          <div><select id="personPerf"><option value="1">绩效 1</option><option value="2" selected>绩效 2</option><option value="3">绩效 3</option></select></div>
+          <div><select id="personPot"><option value="1">潜力 1</option><option value="2" selected>潜力 2</option><option value="3">潜力 3</option></select></div>
+          <div style="flex:0 0 auto"><button class="small" onclick="addPerson()">＋ 记录</button></div>
+        </div>
+        <div style="margin-bottom:8px"><input id="personObs" placeholder="观察记录（可选）"></div>
+        <div class="nine-grid" id="nineGrid"></div>
+        <div class="nine-grid-axes"><span>绩效 →（右高）</span><span>潜力 ↑（上高）</span></div>
+        <div class="nine-grid-axes"><span>绩效 →（右高）</span><span>潜力 ↑（上高）</span></div>
+        <div class="section-title">花名册 <span style="font-weight:400">（点击名册进入管理）</span>
+          <button class="ghost small" style="margin-left:8px" onclick="addRoster()">＋ 新建名册</button>
+        </div>
+        <div id="rosters"></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- 快速新增任务弹窗（AI 识别） -->
+<div class="modal-mask" id="quickAddModal">
+  <div class="modal modal-light" style="width:min(560px,94vw)">
+    <div class="modal-head">
+      <h3>快速新增任务 · AI 识别</h3>
+      <button class="modal-x" onclick="closeModal('quickAddModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="qa-tabs">
+        <button type="button" id="qaTabDoc" class="active" onclick="switchQaTab('doc')">文档 / 纪要</button>
+        <button type="button" id="qaTabOfficial" onclick="switchQaTab('official')">收文 / 教育局文件</button>
+      </div>
+      <p class="qa-desc" id="qaDescDoc">粘贴会议纪要、工作安排等文本，或选择本地 .txt / .md / .csv / .docx / .xlsx 文件。</p>
+      <p class="qa-desc" id="qaDescOfficial" style="display:none">两种方式任选：① 把收文图片或教育局文件（PDF / Word / 照片）直接发给 Kimi 对话，Kimi 识别后待办预览会自动推送到这里；② 把文件中的文字粘贴到下方再点「AI 智能分析整理」。AI 只提取需要落实的事项（报送材料、参会、检查、反馈意见等），并带来文单位与截止时间。</p>
+      <textarea id="qaText" rows="8" placeholder="在此粘贴文本，或点击下方「选择文件」读取本地文件内容"></textarea>
+      <div id="qaFileInfo" class="qa-fileinfo"></div>
+      <div id="qaResult" style="margin-top:10px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-outline" onclick="document.getElementById('qaFile').click()">选择文件</button>
+      <input type="file" id="qaFile" accept=".txt,.md,.csv,.docx,.xlsx" style="display:none" onchange="uploadQaFile(this)">
+      <button class="btn-black" onclick="qaAnalyze('ai')">AI 智能分析整理（推荐）</button>
+      <button class="btn-plain" onclick="qaAnalyze('local')">本地快速识别</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增任务弹窗（完整表单） -->
+<div class="modal-mask" id="taskFormModal">
+  <div class="modal modal-light" style="width:min(560px,94vw)">
+    <div class="modal-head">
+      <h3 id="tfTitle">新增任务</h3>
+      <button class="modal-x" onclick="closeModal('taskFormModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="tfId">
+      <div class="tf-field">
+        <label>任务名称 <span class="req">*</span></label>
+        <input id="tfName" placeholder="例如：准备周一升旗仪式讲话稿">
+      </div>
+      <div class="tf-grid">
+        <div class="tf-field">
+          <label>工作分类</label>
+          <select id="tfCategory">
+            <option value="">请选择</option>
+            <option>德育</option><option>教学</option><option>教研</option>
+            <option>行政</option><option>安全</option><option>家校</option><option>其他</option>
+          </select>
+        </div>
+        <div class="tf-field">
+          <label>优先级</label>
+          <select id="tfPriority">
+            <option value="P0">P0 紧急</option>
+            <option value="P1">P1 重要</option>
+            <option value="P2" selected>P2 普通</option>
+          </select>
+        </div>
+        <div class="tf-field">
+          <label>任务来源</label>
+          <input id="tfSource" placeholder="如：学部主任安排 / 德育部">
+        </div>
+        <div class="tf-field">
+          <label>截止时间</label>
+          <input id="tfDue" type="date">
+        </div>
+      </div>
+      <div class="tf-field"><label>下一步具体做什么</label><input id="tfNextStep"></div>
+      <div class="tf-field"><label>预期成果</label><input id="tfOutcome"></div>
+      <div class="tf-field"><label>阻塞点</label><input id="tfBlocker"></div>
+      <div class="tf-field"><label>备注</label><textarea id="tfNote" rows="3"></textarea></div>
+      <div class="tf-switch-row">
+        <label class="switch"><input type="checkbox" id="tfNeedReport"><span class="slider"></span></label>
+        <span>需要向领导汇报</span>
+      </div>
+      <div class="tf-switch-row">
+        <label class="switch"><input type="checkbox" id="tfDaily" onchange="tfRepeatToggle('daily')"><span class="slider"></span></label>
+        <span>每日必做（每天都需要的重复事项，完成后次日自动恢复为待做）</span>
+      </div>
+      <div class="tf-switch-row">
+        <label class="switch"><input type="checkbox" id="tfWeekly" onchange="tfRepeatToggle('weekly')"><span class="slider"></span></label>
+        <span>每周必做（每周需要做一次的事项，完成后下周一自动恢复为待做）</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-black" onclick="saveTaskForm()">保存任务</button>
+      <button class="btn-plain" onclick="closeModal('taskFormModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 花名册管理弹窗（独立操作界面） -->
+<div class="modal-mask" id="rosterModal">
+  <div class="modal" style="width:min(520px,92vw)">
+    <div class="modal-head">
+      <h3>📋 <span id="rmTitle"></span><span class="badge" id="rmCount" style="margin-left:8px"></span></h3>
+      <button class="modal-x" onclick="closeModal('rosterModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="scroll-list" style="max-height:45vh" id="rmMembers"></div>
+      <div class="member-add" style="margin-top:12px">
+        <input id="rmName" placeholder="姓名">
+        <input id="rmRole" placeholder="角色（如：助理教师）">
+        <button class="small" style="flex:0 0 auto" onclick="addMemberFromModal()">＋ 添加</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="danger" onclick="deleteRosterFromModal()">删除名册</button>
+      <span style="flex:1"></span>
+      <button class="ghost" onclick="closeModal('rosterModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 成员编辑弹窗 -->
+<div class="modal-mask" id="memberModal">
+  <div class="modal" style="width:min(420px,92vw)">
+    <div class="modal-head">
+      <h3>✏ 编辑成员</h3>
+      <button class="modal-x" onclick="closeModal('memberModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:10px"><label>姓名</label><input id="mmName"></div>
+      <div><label>角色</label><input id="mmRole" placeholder="如：助理教师"></div>
+    </div>
+    <div class="modal-foot">
+      <button onclick="saveMember()">💾 保存</button>
+      <span style="flex:1"></span>
+      <button class="ghost" onclick="closeModal('memberModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 观察记录编辑弹窗 -->
+<div class="modal-mask" id="personModal">
+  <div class="modal" style="width:min(440px,92vw)">
+    <div class="modal-head">
+      <h3>👤 观察记录</h3>
+      <button class="modal-x" onclick="closeModal('personModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pmId">
+      <div style="margin-bottom:10px"><label>人员</label><input id="pmName" disabled></div>
+      <div class="form-row">
+        <div><label>绩效（1-3）</label><select id="pmPerf"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+        <div><label>潜力（1-3）</label><select id="pmPot"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+      </div>
+      <div><label>观察记录</label><textarea id="pmObs" rows="3"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button onclick="savePersonNote()">💾 保存</button>
+      <button class="danger" onclick="deletePersonNote()">删除记录</button>
+      <span style="flex:1"></span>
+      <button class="ghost" onclick="closeModal('personModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 通用单输入弹窗（新建名册 / 重置密码等） -->
+<div class="modal-mask" id="inputModal">
+  <div class="modal" style="width:min(400px,92vw)">
+    <div class="modal-head">
+      <h3 id="imTitle"></h3>
+      <button class="modal-x" onclick="closeModal('inputModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <label id="imLabel"></label>
+      <input id="imInput" onkeydown="if(event.key==='Enter')confirmInputModal()">
+    </div>
+    <div class="modal-foot">
+      <button onclick="confirmInputModal()">✔ 确认</button>
+      <span style="flex:1"></span>
+      <button class="ghost" onclick="closeModal('inputModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js?v=20261012"></script>
+</body>
+</html>
