@@ -172,3 +172,115 @@ npm ls next-themes
 ## 疑虑
 
 无未解决疑虑。本阶段没有业务页面，因此未运行业务 E2E；Playwright 依赖和 `test:e2e` 脚本按 brief 预留给后续阶段。脚手架最新的 `create-vite@9.3.2` 发布包实际缺少模板目录，已改用包含完整模板的 `create-vite@8.3.0`，不影响生成工程的依赖版本或验证结果。
+
+---
+
+# 独立复核修复追加
+
+复核基线：`001b6229ce5138206db3d1554686a791b29675ae`。本轮仅修复复核指出的组件兼容性、Sonner 色值、Node engines 与对应测试，不改变技术栈、不升降依赖、不修改后端。
+
+## 复核问题与修复
+
+1. **Alert 的无效 spacing 变量**
+   - 原因：`has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr]` 使用 Tailwind 4 的 `--spacing`，Tailwind 3 编译后会保留未定义变量。
+   - 修复：改为 `has-[>svg]:grid-cols-[1rem_1fr]`，图标列明确为 1 rem。
+   - 验证：真实 Tailwind 3 编译与生产 CSS 均包含 `grid-template-columns: 1rem 1fr`，产物不再包含 `var(--spacing)`。
+
+2. **CardAction 的 Tailwind 4 has-data 简写**
+   - 原因：`has-data-[slot=card-action]:grid-cols-[1fr_auto]` 在 Tailwind 3 中没有生成目标规则。
+   - 修复：改为 `has-[[data-slot=card-action]]:grid-cols-[1fr_auto]`。
+   - 验证：编译产物存在 `:has([data-slot=card-action])` 选择器，并在对应规则中包含 `grid-template-columns: 1fr auto`。
+
+3. **Sonner 普通通知颜色缺少 HSL 包装**
+   - 修复：`--normal-bg`、`--normal-text`、`--normal-border` 分别改为 `hsl(var(--popover))`、`hsl(var(--popover-foreground))`、`hsl(var(--border))`。
+   - 效果：与 Token 的 HSL 通道格式一致，亮色和暗色主题都能形成有效 CSS 色值；`--normal-border-radius` 保持原样。
+
+4. **Node engines 声明**
+   - 直接解析 lockfile 的全部 `engines.node`，关键约束包括 jsdom／相关解析包的 `^22.22.2 || ^24.15.0 || >=26.0.0`、React Router 的 `>=22.22.0`、Vitest 的 `^22.12.0 || ^24.0.0 || >=26.0.0`。
+   - 实际交集采用最严格范围：`^22.22.2 || ^24.15.0 || >=26.0.0`。该声明明确排除 Node 20、23 和 25，避免在不兼容环境安装后才失败。
+   - 已写入 `package.json` 并通过 `npm install --package-lock-only --ignore-scripts` 同步 lockfile 根节点；lockfile 仅增加同样的 3 行 engines，没有改变任何依赖版本。
+   - 当前验证环境 Node `v24.21.0` 满足该范围，`npm ls --depth=0` 成功。
+
+5. **回归测试加强**
+   - `theme.test.ts` 使用 `it.each` 参数化验证 brief 全部 17 个 light Token 和 16 个 dark Token，并验证 class dark mode、背景／前景／边框／输入／焦点环、7 组前景配对语义色及 3 个圆角映射，共 47 项。
+   - 新增 `tailwind-compatibility.test.ts`，通过 PostCSS 实际调用 Tailwind 3 和项目真实配置编译 `src/index.css`，不是只检查组件字符串或依赖历史 dist。
+   - Alert 测试从编译规则中提取 `:has(>svg)` 的声明，验证 1 rem 双列并排除 `var(--spacing)`；Card 测试验证 CardAction 选择器及双列声明；Sonner 测试对三个 HSL 包装做精确回归断言。
+
+## 本轮 RED 记录
+
+在修改生产实现前执行：
+
+```bash
+npm test -- theme.test.ts tailwind-compatibility.test.ts
+```
+
+真实结果：2 个测试文件共 50 项，47 项通过、3 项失败。完整 Token／映射参数化测试在原实现上通过，证明原 Token 数值和映射未回归；三个新增兼容性测试按预期失败：
+
+```text
+✓ src/test/theme.test.ts (47 tests)
+❯ src/test/tailwind-compatibility.test.ts (3 tests | 3 failed)
+
+Alert: expected grid-template-columns: calc(var(--spacing) * 4) 1fr
+       to match grid-template-columns: 1rem 1fr
+Card:  expected missing :has([data-slot=card-action]) declarations
+       to match grid-template-columns: 1fr auto
+Sonner: expected "--normal-bg": "var(--popover)"
+        to equal "--normal-bg": "hsl(var(--popover))"
+```
+
+这些失败分别对应复核的三项实际问题，不是测试语法、模块加载或配置错误。
+
+## 本轮 GREEN 与完整验证
+
+修复后重新执行同一聚焦命令：
+
+```bash
+npm test -- theme.test.ts tailwind-compatibility.test.ts
+```
+
+结果：2 个文件、50/50 项全部通过。
+
+随后执行完整前端验证：
+
+```bash
+npm test && npm run lint && npm run build && test -f dist/index.html
+```
+
+结果：
+
+```text
+Test Files  4 passed (4)
+Tests       52 passed (52)
+eslint .: exit 0
+✓ 29 modules transformed.
+dist/index.html                   0.46 kB
+dist/assets/index-C_h1HUOt.css   32.78 kB
+dist/assets/index-7omBdUJ2.js   222.88 kB
+✓ built in 993ms
+dist/index.html: exists
+```
+
+另外直接读取生产 CSS 并按选择器提取规则，结果：
+
+```text
+DIST_CSS_OK Alert=1rem_1fr CardAction=1fr_auto
+```
+
+同时确认生产 CSS 不包含 `var(--spacing)`。`npm install --package-lock-only --ignore-scripts` 审计为 0 vulnerabilities，`npm ls --depth=0` 依赖树正常。进程检查无本项目 Node / Java 服务残留。本轮未启动开发服务器；后端源码未改，按复核要求未重复执行 Maven。
+
+## 本轮变更文件与自审
+
+- 修改：`frontend/src/components/ui/alert.tsx`、`card.tsx`、`sonner.tsx`。
+- 修改：`frontend/package.json`、`frontend/package-lock.json`，仅增加 Node engines 及锁文件根节点同步。
+- 强化：`frontend/src/test/theme.test.ts`。
+- 新增：`frontend/src/test/tailwind-compatibility.test.ts`。
+- 追加：`.superpowers/sdd/task-4-report.md`。
+
+- [x] 三项 Important 均有真实 RED、对应最小修复和 GREEN。
+- [x] Node 版本来自 lockfile 实际 engines 交集，未大规模变更依赖。
+- [x] 所有 brief Token 和关键 Tailwind 映射均采用简洁参数化测试。
+- [x] Alert／Card 测试验证真实 Tailwind 3 编译规则，并再次检查生产 CSS。
+- [x] 完整测试、lint、build、dist 入口及依赖树全部通过。
+- [x] 无后台服务、无后端改动、无 push。
+
+本轮无未解决疑虑。
