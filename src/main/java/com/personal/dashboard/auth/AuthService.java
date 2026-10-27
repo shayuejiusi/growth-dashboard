@@ -27,7 +27,9 @@ public class AuthService {
     private final UserRepository repo;
     private final Map<String, Session> tokens = new ConcurrentHashMap<>();
 
-    private record Session(String username, long expiresAt) {}
+    public record AuthSession(String token, String csrfToken, User user) {}
+
+    private record Session(String username, long expiresAt, String csrfToken) {}
 
     public AuthService(UserRepository repo) {
         this.repo = repo;
@@ -42,15 +44,16 @@ public class AuthService {
         repo.save(UserEntity.from(user));
     }
 
-    /** 登录成功返回令牌，失败返回 null */
-    public String login(String username, String password) {
+    /** 登录成功返回会话与 CSRF 令牌，失败返回 null */
+    public AuthSession login(String username, String password) {
         return repo.findById(username)
                 .filter(u -> hash(u.getSalt(), password).equals(u.getPasswordHash()))
                 .map(u -> {
-                    String token = UUID.randomUUID().toString().replace("-", "")
-                            + UUID.randomUUID().toString().replace("-", "");
-                    tokens.put(token, new Session(username, System.currentTimeMillis() + SESSION_MILLIS));
-                    return token;
+                    String token = randomToken();
+                    String csrf = randomToken();
+                    tokens.put(token, new Session(username,
+                            System.currentTimeMillis() + SESSION_MILLIS, csrf));
+                    return new AuthSession(token, csrf, u.toRecord());
                 })
                 .orElse(null);
     }
@@ -64,6 +67,30 @@ public class AuthService {
             return null;
         }
         return repo.findById(s.username()).map(UserEntity::toRecord).orElse(null);
+    }
+
+    public String csrfToken(String token) {
+        if (token == null || token.isBlank()) return null;
+        Session s = tokens.get(token);
+        if (s == null || s.expiresAt() < System.currentTimeMillis()) {
+            tokens.remove(token);
+            return null;
+        }
+        return s.csrfToken();
+    }
+
+    public boolean validCsrf(String token, String csrf) {
+        if (token == null || csrf == null) return false;
+        Session s = tokens.get(token);
+        return s != null && s.expiresAt() >= System.currentTimeMillis()
+                && MessageDigest.isEqual(
+                        s.csrfToken().getBytes(StandardCharsets.UTF_8),
+                        csrf.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String randomToken() {
+        return UUID.randomUUID().toString().replace("-", "")
+                + UUID.randomUUID().toString().replace("-", "");
     }
 
     public void logout(String token) {
