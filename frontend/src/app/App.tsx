@@ -8,6 +8,7 @@ import { LoginPage } from "@/features/auth/LoginPage"
 import { sessionQueryKey, useSession } from "@/features/auth/use-session"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { RemindersPage } from "@/features/reminders/RemindersPage"
+import { TasksPage } from "@/features/tasks/TasksPage"
 import { AppShell } from "./AppShell"
 import { Providers } from "./providers"
 import { RequireRole } from "./RequireRole"
@@ -70,7 +71,7 @@ function AppRoutes() {
           <Route element={<AppShell />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/tasks" element={<PageContent title="任务管理" description="组织任务并推进执行。" />} />
+            <Route path="/tasks" element={<TasksPage />} />
             <Route path="/reminders" element={<RemindersPage />} />
             <Route element={<RequireRole maxLevel={2} />}>
               <Route path="/content" element={<PageContent title="每日精选" description="浏览为你整理的精选内容。" />} />

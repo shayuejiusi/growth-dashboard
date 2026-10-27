@@ -61,6 +61,7 @@ describe("认证与路由", () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse({ message: "未登录" }, 401))
       .mockResolvedValueOnce(jsonResponse(admin))
+      .mockResolvedValueOnce(jsonResponse([]))
     const user = userEvent.setup()
     render(<App />)
 
@@ -72,7 +73,7 @@ describe("认证与路由", () => {
     expect(window.location.pathname).toBe("/tasks")
     expect(window.location.search).toBe("?filter=today")
     expect(window.location.hash).toBe("#upcoming")
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(3)
   })
 
   it("登录失败显示系统错误提醒并保留表单上下文", async () => {

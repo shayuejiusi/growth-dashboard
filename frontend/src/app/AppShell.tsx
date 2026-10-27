@@ -186,7 +186,7 @@ export function AppShell() {
               </TooltipTrigger>
               <TooltipContent>{theme === "light" ? "深色模式" : "浅色模式"}</TooltipContent>
             </Tooltip>
-            <Button size="sm" aria-label="新建任务" onClick={() => toast.info("任务创建表单将在后续阶段开放")}>
+            <Button size="sm" aria-label="新建任务" onClick={() => navigate("/tasks?new=1")}>
               <Plus aria-hidden="true" /><span className="hidden sm:inline">新建任务</span>
             </Button>
             <DropdownMenu>

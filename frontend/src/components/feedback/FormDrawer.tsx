@@ -17,7 +17,7 @@ interface FormDrawerProps {
   dirty: boolean
   title: string
   description?: string
-  children: ReactNode
+  children: ReactNode | ((requestClose: () => void) => ReactNode)
 }
 
 /** 长表单容器：禁止蒙层关闭，并在有未保存修改时要求明确确认。 */
@@ -54,7 +54,7 @@ export function FormDrawer({ open, onOpenChange, dirty, title, description, chil
               </Button>
             </div>
           </DrawerHeader>
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">{typeof children === "function" ? children(requestClose) : children}</div>
         </DrawerContent>
       </Drawer>
       <ConfirmDialog
