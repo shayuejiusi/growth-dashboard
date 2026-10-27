@@ -30,7 +30,8 @@ export function DashboardPage() {
   const queryClient = useQueryClient()
   const dashboard = useQuery({ queryKey: dashboardKeys.detail(), queryFn: ({ signal }) => getDashboard(signal) })
   const aiStatus = useQuery({ queryKey: ["ai", "status"], queryFn: ({ signal }) => getAiStatus(signal) })
-  const aiRetrying = aiStatus.isRefetching || (aiStatus.isPending && aiStatus.errorUpdatedAt > 0)
+  const aiRetrying = (aiStatus.isError && aiStatus.isRefetching)
+    || (!aiStatus.data && aiStatus.isPending && aiStatus.errorUpdatedAt > 0)
   const complete = useMutation({
     mutationFn: completeTask,
     onSuccess: async () => {

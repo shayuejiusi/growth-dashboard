@@ -181,6 +181,40 @@ describe("驾驶舱", () => {
     expect(screen.queryByText("AI 状态暂时不可用")).not.toBeInTheDocument()
   })
 
+  it("已有 AI 数据后台刷新期间不显示错误 Alert 或重试按钮", async () => {
+    mockApi()
+    let aiRequests = 0
+    let finishRefresh!: (response: Response) => void
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path === "/api/dashboard") return jsonResponse(dashboard)
+      if (path === "/api/ai/status") {
+        aiRequests += 1
+        if (aiRequests === 2) return new Promise<Response>((resolve) => { finishRefresh = resolve })
+        return jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
+      }
+      return jsonResponse({}, 500)
+    })
+    const { queryClient } = renderPage()
+    expect(await screen.findByText("AI：本地规则引擎")).toBeVisible()
+
+    let refresh!: Promise<void>
+    act(() => {
+      refresh = queryClient.refetchQueries({ queryKey: ["ai", "status"] })
+    })
+    await waitFor(() => expect(aiRequests).toBe(2))
+    expect(screen.getByText("AI：本地规则引擎")).toBeVisible()
+    expect(screen.queryByText("AI 状态暂时不可用")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "正在重试" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "重试 AI 状态" })).not.toBeInTheDocument()
+
+    await act(async () => {
+      finishRefresh(jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" }))
+      await refresh
+    })
+    expect(screen.queryByText("AI 状态暂时不可用")).not.toBeInTheDocument()
+  })
+
   it("无任务时展示统计零值与下一步空状态", async () => {
     mockApi({
       "/api/dashboard": {
