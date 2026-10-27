@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 60 20% 97%;
+    --foreground: 150 12% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 150 12% 16%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 12% 16%;
+    --primary: 158 37% 29%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 90 18% 92%;
+    --secondary-foreground: 150 18% 24%;
+    --muted: 90 14% 94%;
+    --muted-foreground: 140 7% 42%;
+    --accent: 100 18% 91%;
+    --accent-foreground: 150 20% 24%;
+    --destructive: 0 66% 47%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 90 12% 85%;
+    --input: 90 12% 85%;
+    --ring: 158 37% 29%;
+    --radius: .75rem;
+  }
+
+  .dark {
+    --background: 150 10% 10%;
+    --foreground: 80 14% 91%;
+    --card: 150 9% 13%;
+    --card-foreground: 80 14% 91%;
+    --popover: 150 9% 13%;
+    --popover-foreground: 80 14% 91%;
+    --primary: 151 30% 60%;
+    --primary-foreground: 150 15% 10%;
+    --secondary: 150 8% 18%;
+    --secondary-foreground: 80 14% 91%;
+    --muted: 150 8% 17%;
+    --muted-foreground: 100 7% 65%;
+    --accent: 150 8% 20%;
+    --accent-foreground: 80 14% 91%;
+    --destructive: 0 58% 55%;
+    --destructive-foreground: 150 15% 10%;
+    --border: 150 7% 24%;
+    --input: 150 7% 24%;
+    --ring: 151 30% 60%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color-scheme: light;
+    background: hsl(var(--background));
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
