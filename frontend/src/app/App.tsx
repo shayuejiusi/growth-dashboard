@@ -3,10 +3,11 @@ import { useEffect } from "react"
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router"
 
 import { StatePanel } from "@/components/feedback/StatePanel"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { sessionQueryKey, useSession } from "@/features/auth/use-session"
+import { DashboardPage } from "@/features/dashboard/DashboardPage"
+import { RemindersPage } from "@/features/reminders/RemindersPage"
 import { AppShell } from "./AppShell"
 import { Providers } from "./providers"
 import { RequireRole } from "./RequireRole"
@@ -42,22 +43,6 @@ function RequireAuth() {
   return <Outlet />
 }
 
-function DashboardPage() {
-  const location = useLocation()
-  const denied = Boolean((location.state as { denied?: boolean } | null)?.denied)
-  return (
-    <div className="space-y-6">
-      {denied ? (
-        <Alert variant="destructive">
-          <AlertTitle>没有访问权限</AlertTitle>
-          <AlertDescription>当前账号无法访问该页面，已返回工作台。</AlertDescription>
-        </Alert>
-      ) : null}
-      <PageContent title="工作台" description="查看与今天相关的工作概览。" />
-    </div>
-  )
-}
-
 function PageContent({ title, description }: { title: string; description: string }) {
   return (
     <section aria-labelledby="page-title" className="space-y-6">
@@ -86,7 +71,7 @@ function AppRoutes() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/tasks" element={<PageContent title="任务管理" description="组织任务并推进执行。" />} />
-            <Route path="/reminders" element={<PageContent title="提醒事项" description="集中查看需要及时处理的事项。" />} />
+            <Route path="/reminders" element={<RemindersPage />} />
             <Route element={<RequireRole maxLevel={2} />}>
               <Route path="/content" element={<PageContent title="每日精选" description="浏览为你整理的精选内容。" />} />
             </Route>

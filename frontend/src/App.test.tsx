@@ -16,6 +16,22 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
+function mockAuthenticated(user: typeof admin) {
+  const stats = { total: 0, open: 0, overdue: 0, highPriority: 0, todayDue: 0, completedTotal: 0, completionRate: 0, needReport: 0 }
+  vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+    switch (String(input)) {
+      case "/api/auth/me": return jsonResponse(user)
+      case "/api/dashboard": return jsonResponse({ generatedAt: "2026-10-27 10:00", stats, top3: [], focusNow: "先录入今日任务" })
+      case "/api/reminders": return jsonResponse({
+        generatedAt: "2026-10-27 10:00", phase: "早间检查", stats, focusNow: "暂无待处理提醒", scripts: [],
+        reminders: { todayDue: [], overdue: [], highPriority: [], needReport: [], recurring: [] },
+      })
+      case "/api/ai/status": return jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
+      default: return jsonResponse({ message: "未 mock 的接口" }, 500)
+    }
+  })
+}
+
 describe("认证与路由", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/dashboard")
@@ -77,14 +93,14 @@ describe("认证与路由", () => {
   it.each([
     ["/dashboard", "工作台"],
     ["/tasks", "任务管理"],
-    ["/reminders", "提醒事项"],
+    ["/reminders", "提醒中心"],
     ["/content", "每日精选"],
     ["/admin/users", "账号管理"],
     ["/review", "工作复盘"],
     ["/talent", "人才筛选"],
   ])("一级权限可以访问 %s", async (path, heading) => {
     window.history.replaceState({}, "", path)
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(admin))
+    mockAuthenticated(admin)
     render(<App />)
 
     expect(await screen.findByRole("heading", { name: heading })).toBeInTheDocument()
@@ -94,7 +110,7 @@ describe("认证与路由", () => {
     "三级权限不能通过直接地址访问 %s",
     async (path) => {
       window.history.replaceState({}, "", path)
-      vi.mocked(fetch).mockResolvedValue(jsonResponse(staff))
+      mockAuthenticated(staff)
       render(<App />)
 
       expect(await screen.findByRole("alert")).toHaveTextContent("没有访问权限")
@@ -106,7 +122,7 @@ describe("认证与路由", () => {
     "二级权限不能通过直接地址访问一级路由 %s",
     async (path) => {
       window.history.replaceState({}, "", path)
-      vi.mocked(fetch).mockResolvedValue(jsonResponse(manager))
+      mockAuthenticated(manager)
       render(<App />)
 
       expect(await screen.findByRole("alert")).toHaveTextContent("没有访问权限")
@@ -115,7 +131,7 @@ describe("认证与路由", () => {
   )
 
   it("已登录会话失效时清空会话并返回登录页", async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(admin))
+    mockAuthenticated(admin)
     render(<App />)
     await screen.findByRole("heading", { name: "工作台" })
 
@@ -127,10 +143,17 @@ describe("认证与路由", () => {
   })
 
   it("登出携带 CSRF、清理会话并返回登录页", async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse(admin))
-      .mockResolvedValueOnce(jsonResponse({ csrfToken: "logout-csrf" }))
-      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+    mockAuthenticated(admin)
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      switch (String(input)) {
+        case "/api/auth/me": return jsonResponse(admin)
+        case "/api/auth/csrf": return jsonResponse({ csrfToken: "logout-csrf" })
+        case "/api/auth/logout": return jsonResponse({ ok: true })
+        case "/api/dashboard": return jsonResponse({ generatedAt: "2026-10-27 10:00", stats: { total: 0, open: 0, overdue: 0, highPriority: 0, todayDue: 0, completedTotal: 0, completionRate: 0, needReport: 0 }, top3: [], focusNow: "先录入今日任务" })
+        case "/api/ai/status": return jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
+        default: return jsonResponse({}, 500)
+      }
+    })
     const user = userEvent.setup()
     render(<App />)
     await screen.findByRole("heading", { name: "工作台" })
@@ -139,8 +162,8 @@ describe("认证与路由", () => {
     await user.click(screen.getByRole("menuitem", { name: "退出登录" }))
 
     expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeInTheDocument()
-    expect(fetch).toHaveBeenCalledTimes(3)
-    expect(fetch).toHaveBeenNthCalledWith(2, "/api/auth/csrf", expect.objectContaining({ credentials: "include" }))
+    expect(fetch).toHaveBeenCalledTimes(5)
+    expect(fetch).toHaveBeenNthCalledWith(4, "/api/auth/csrf", expect.objectContaining({ credentials: "include" }))
     expect(fetch).toHaveBeenLastCalledWith("/api/auth/logout", expect.objectContaining({
       method: "POST",
       credentials: "include",
@@ -150,7 +173,7 @@ describe("认证与路由", () => {
 
   it("未知及能力相关地址不暴露后续模块", async () => {
     window.history.replaceState({}, "", "/capability/assessment")
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(admin))
+    mockAuthenticated(admin)
     const { container } = render(<App />)
 
     expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument()
