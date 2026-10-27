@@ -13,17 +13,18 @@ import type { TaskInput } from "./types"
 
 interface QuickAddDrawerProps {
   open: boolean
+  writePending?: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (input: TaskInput) => Promise<void>
 }
 
 const selectClassName = "border-input focus-visible:border-ring focus-visible:ring-ring/50 flex h-9 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-[3px]"
 
-export function QuickAddDrawer({ open, onOpenChange, onSubmit }: QuickAddDrawerProps) {
-  return open ? <QuickAddForm onOpenChange={onOpenChange} onSubmit={onSubmit} /> : null
+export function QuickAddDrawer({ open, writePending, onOpenChange, onSubmit }: QuickAddDrawerProps) {
+  return open ? <QuickAddForm writePending={writePending} onOpenChange={onOpenChange} onSubmit={onSubmit} /> : null
 }
 
-function QuickAddForm({ onOpenChange, onSubmit }: Omit<QuickAddDrawerProps, "open">) {
+function QuickAddForm({ onOpenChange, onSubmit, writePending = false }: Omit<QuickAddDrawerProps, "open">) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const { register, handleSubmit, formState: { errors, isDirty, isSubmitting } } = useForm<TaskFormValues>({
@@ -75,7 +76,7 @@ function QuickAddForm({ onOpenChange, onSubmit }: Omit<QuickAddDrawerProps, "ope
           </form>
           <DialogFooter>
             <Button type="button" variant="outline" disabled={isSubmitting} onClick={requestClose}>取消</Button>
-            <Button type="submit" form="quick-add-form" disabled={isSubmitting}>{isSubmitting ? "正在创建…" : "创建任务"}</Button>
+            <Button type="submit" form="quick-add-form" disabled={isSubmitting || writePending}>{isSubmitting ? "正在创建…" : "创建任务"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

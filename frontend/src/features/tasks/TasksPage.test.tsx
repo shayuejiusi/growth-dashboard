@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, useNavigate } from "react-router"
+import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/sonner"
@@ -102,7 +103,12 @@ function mockApi(initialTasks: Task[] = []) {
 
 function GlobalNewButton() {
   const navigate = useNavigate()
-  return <button type="button" onClick={() => navigate("/tasks?new=1")}>全局新建</button>
+  return (
+    <>
+      <button type="button" onClick={() => navigate("/tasks?new=1")}>全局新建</button>
+      <button type="button" onClick={() => navigate("/tasks?focus=focus-me")}>导航聚焦</button>
+    </>
+  )
 }
 
 function renderPage(entry = "/tasks") {
@@ -128,6 +134,7 @@ describe("任务管理", () => {
 
   afterEach(() => {
     clearCsrfToken()
+    toast.dismiss()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -287,6 +294,123 @@ describe("任务管理", () => {
     expect(exportCall?.[1]).toMatchObject({ credentials: "include" })
     expect(String(exportCall?.[0])).not.toMatch(/token|session/i)
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:task-backup")
+  })
+
+  it("延迟排序中禁止删除、清空、完成、编辑和新增，失败后缓存保持一致", async () => {
+    const original = [
+      makeTask(),
+      makeTask({ id: "task-2", title: "第二项任务", position: 1 }),
+    ]
+    mockApi(original)
+    const baseFetch = vi.mocked(fetch).getMockImplementation()!
+    let finishOrder!: (response: Response) => void
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/tasks/order") return new Promise<Response>((resolve) => { finishOrder = resolve })
+      return baseFetch(input, init)
+    })
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const index = this.getAttribute("data-testid") === "task-task-2" ? 1 : 0
+      return {
+        x: 0, y: index * 100, top: index * 100, bottom: index * 100 + 100,
+        left: 0, right: 300, width: 300, height: 100, toJSON: () => ({}),
+      } as DOMRect
+    })
+    const { queryClient } = renderPage()
+    const handle = await screen.findByRole("button", { name: "拖动“整理本周工作”排序" })
+    fireEvent.keyDown(handle, { key: " ", code: "Space" })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    fireEvent.keyDown(handle, { key: "ArrowDown", code: "ArrowDown" })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    fireEvent.keyDown(handle, { key: " ", code: "Space" })
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([path]) => path === "/api/tasks/order")).toBe(true))
+
+    const blockedButtons = [
+      screen.getByRole("button", { name: "删除“整理本周工作”" }),
+      screen.getByRole("button", { name: "完成“整理本周工作”" }),
+      screen.getByRole("button", { name: "编辑“整理本周工作”" }),
+      screen.getByRole("button", { name: "清空全部任务" }),
+      screen.getByRole("button", { name: "新建任务" }),
+      screen.getByRole("button", { name: "快速新建" }),
+    ]
+    for (const button of blockedButtons) {
+      expect(button).toBeDisabled()
+      fireEvent.click(button)
+    }
+    expect(vi.mocked(fetch).mock.calls.filter(([path, init]) => {
+      const method = init?.method ?? "GET"
+      return path !== "/api/tasks/order" && path !== "/api/auth/csrf" && method !== "GET"
+    })).toHaveLength(0)
+
+    await act(async () => { finishOrder(jsonResponse({ message: "排序失败" }, 500)) })
+    expect(await screen.findByText("排序未保存，已恢复原顺序")).toBeVisible()
+    expect(queryClient.getQueryData<Task[]>(["tasks", "list"])?.map((task) => task.id)).toEqual(original.map((task) => task.id))
+    expect(screen.getByRole("button", { name: "编辑“整理本周工作”" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "新建任务" })).toBeEnabled()
+  })
+
+  it("其他任务写操作 pending 时禁止拖拽，结束后恢复", async () => {
+    mockApi([makeTask(), makeTask({ id: "task-2", title: "第二项任务", position: 1 })])
+    const baseFetch = vi.mocked(fetch).getMockImplementation()!
+    let finishComplete!: (response: Response) => void
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/tasks/task-1/complete") return new Promise<Response>((resolve) => { finishComplete = resolve })
+      return baseFetch(input, init)
+    })
+    const user = userEvent.setup()
+    renderPage()
+    const handle = await screen.findByRole("button", { name: "拖动“整理本周工作”排序" })
+    await user.click(screen.getByRole("button", { name: "完成“整理本周工作”" }))
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([path]) => path === "/api/tasks/task-1/complete")).toBe(true))
+    expect(handle).toBeDisabled()
+
+    await act(async () => { finishComplete(jsonResponse({ ...makeTask(), status: "DONE" })) })
+    await waitFor(() => expect(screen.getByRole("button", { name: "拖动“第二项任务”排序" })).toBeEnabled())
+  })
+
+  it("同挂载实例从普通任务页导航到 focus URL 时切换全部并聚焦目标", async () => {
+    mockApi([
+      makeTask(),
+      makeTask({ id: "focus-me", title: "后续聚焦任务", dueDate: "2099-12-31", position: 1 }),
+    ])
+    const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView")
+    const user = userEvent.setup()
+    renderPage("/tasks")
+    await screen.findByText("整理本周工作")
+    expect(screen.queryByTestId("task-focus-me")).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "导航聚焦" }))
+
+    expect(await screen.findByTestId("task-focus-me")).toHaveAttribute("data-focused", "true")
+    expect(screen.getByRole("tab", { name: /全部任务/ })).toHaveAttribute("aria-selected", "true")
+    await waitFor(() => expect(scroll).toHaveBeenCalled())
+  })
+
+  it("本地下载点击异常进入备份失败反馈并释放 URL、清理节点", async () => {
+    mockApi([makeTask()])
+    const user = userEvent.setup()
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:task-backup"), revokeObjectURL })
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => { throw new Error("点击下载失败") })
+    renderPage()
+    await screen.findByText("整理本周工作")
+
+    await user.click(screen.getByRole("button", { name: "备份任务" }))
+
+    expect(await screen.findByText(/备份失败/)).toBeVisible()
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:task-backup")
+    expect(document.querySelector("a[download^='任务备份-']")).toBeNull()
+  })
+
+  it("createObjectURL 本地异常也进入备份失败反馈", async () => {
+    mockApi([makeTask()])
+    const user = userEvent.setup()
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => { throw new Error("无法创建下载地址") }), revokeObjectURL: vi.fn() })
+    renderPage()
+    await screen.findByText("整理本周工作")
+
+    await user.click(screen.getByRole("button", { name: "备份任务" }))
+
+    expect(await screen.findByText(/备份失败/)).toBeVisible()
   })
 
   it("加载失败可重试，空视图提供新建入口", async () => {

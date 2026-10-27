@@ -16,6 +16,7 @@ const selectClassName = "border-input focus-visible:border-ring focus-visible:ri
 interface TaskFormDrawerProps {
   open: boolean
   task: Task | null
+  writePending?: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (input: TaskInput) => Promise<void>
 }
@@ -29,7 +30,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   return message ? <p id={id} className="text-sm text-destructive">{message}</p> : null
 }
 
-function TaskFormContent({ form, requestClose, onSubmit }: TaskFormContentProps) {
+function TaskFormContent({ form, requestClose, onSubmit, writePending = false }: TaskFormContentProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const { register, handleSubmit, formState: { errors, isSubmitting } } = form
 
@@ -127,7 +128,7 @@ function TaskFormContent({ form, requestClose, onSubmit }: TaskFormContentProps)
         ) : null}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" disabled={isSubmitting} onClick={requestClose}>取消</Button>
-          <Button type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>{isSubmitting ? "正在保存…" : "保存任务"}</Button>
+          <Button type="submit" disabled={isSubmitting || writePending} aria-busy={isSubmitting}>{isSubmitting ? "正在保存…" : "保存任务"}</Button>
         </div>
       </div>
     </form>
@@ -138,7 +139,7 @@ export function TaskFormDrawer(props: TaskFormDrawerProps) {
   return props.open ? <OpenTaskFormDrawer {...props} /> : null
 }
 
-function OpenTaskFormDrawer({ task, onOpenChange, onSubmit }: TaskFormDrawerProps) {
+function OpenTaskFormDrawer({ task, writePending, onOpenChange, onSubmit }: TaskFormDrawerProps) {
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: task ? taskToFormValues(task) : emptyTaskForm,
@@ -152,7 +153,7 @@ function OpenTaskFormDrawer({ task, onOpenChange, onSubmit }: TaskFormDrawerProp
       title={task ? "编辑任务" : "新建任务"}
       description={task ? "调整任务内容，保存后同步更新工作台与提醒。" : "记录需要推进的工作，并明确下一步。"}
     >
-      {(requestClose) => <TaskFormContent form={form} task={task} requestClose={requestClose} onOpenChange={onOpenChange} onSubmit={onSubmit} />}
+      {(requestClose) => <TaskFormContent form={form} task={task} writePending={writePending} requestClose={requestClose} onOpenChange={onOpenChange} onSubmit={onSubmit} />}
     </FormDrawer>
   )
 }

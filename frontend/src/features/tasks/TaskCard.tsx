@@ -75,13 +75,13 @@ export function TaskCard({ task, focused, savingOrder, statusPending, onEdit, on
         </div>
       </div>
       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-3">
-        <Button variant="ghost" size="sm" className="min-h-9" onClick={() => onEdit(task)}><Pencil aria-hidden="true" />编辑<span className="sr-only">“{task.title}”</span></Button>
+        <Button variant="ghost" size="sm" className="min-h-9" disabled={savingOrder} onClick={() => onEdit(task)}><Pencil aria-hidden="true" />编辑<span className="sr-only">“{task.title}”</span></Button>
         {done ? (
-          <Button variant="outline" size="sm" className="min-h-9" disabled={statusPending} onClick={() => onReopen(task)} aria-label={`重开“${task.title}”`}><RotateCcw aria-hidden="true" />重开</Button>
+          <Button variant="outline" size="sm" className="min-h-9" disabled={savingOrder || statusPending} onClick={() => onReopen(task)} aria-label={`重开“${task.title}”`}><RotateCcw aria-hidden="true" />重开</Button>
         ) : (
-          <Button variant="outline" size="sm" className="min-h-9" disabled={statusPending} onClick={() => onComplete(task)} aria-label={`完成“${task.title}”`}><Check aria-hidden="true" />完成</Button>
+          <Button variant="outline" size="sm" className="min-h-9" disabled={savingOrder || statusPending} onClick={() => onComplete(task)} aria-label={`完成“${task.title}”`}><Check aria-hidden="true" />完成</Button>
         )}
-        <Button variant="ghost" size="sm" className="min-h-9 text-destructive hover:text-destructive" onClick={() => onDelete(task)} aria-label={`删除“${task.title}”`}><Trash2 aria-hidden="true" />删除</Button>
+        <Button variant="ghost" size="sm" className="min-h-9 text-destructive hover:text-destructive" disabled={savingOrder} onClick={() => onDelete(task)} aria-label={`删除“${task.title}”`}><Trash2 aria-hidden="true" />删除</Button>
       </div>
     </article>
   )

@@ -14,6 +14,7 @@ import { ClearTasksDialog } from "./ClearTasksDialog"
 import { QuickAddDrawer } from "./QuickAddDrawer"
 import { TaskFormDrawer } from "./TaskFormDrawer"
 import { TaskList } from "./TaskList"
+import { getTaskWriteCoordinator } from "./task-write-coordinator"
 import { clearTasks, completeTask, createTask, deleteTask, exportTasks, getTasks, reopenTask, taskKeys, updateTask } from "./tasks-api"
 import { useTaskOrder } from "./use-task-order"
 import type { Task, TaskInput, TaskView } from "./types"
@@ -76,14 +77,17 @@ function TasksLoading() {
 
 export function TasksPage() {
   const queryClient = useQueryClient()
+  const writeCoordinator = getTaskWriteCoordinator(queryClient)
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const focusId = searchParams.get("focus")
+  const focusRequestKey = focusId ? location.key : null
   const newRequestKey = searchParams.get("new") === "1" ? location.key : null
   const [activeView, setActiveView] = useState<TaskView>(focusId ? "all" : "today")
   const [formOpen, setFormOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [handledNewRequest, setHandledNewRequest] = useState<string | null>(null)
+  const [handledFocusRequest, setHandledFocusRequest] = useState<string | null>(focusRequestKey)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const [deletingTask, setDeletingTask] = useState<Task | null>(null)
@@ -91,6 +95,10 @@ export function TasksPage() {
     setHandledNewRequest(newRequestKey)
     setEditingTask(null)
     setFormOpen(true)
+  }
+  if (focusRequestKey && focusRequestKey !== handledFocusRequest) {
+    setHandledFocusRequest(focusRequestKey)
+    setActiveView("all")
   }
   const tasksQuery = useQuery({ queryKey: taskKeys.list(), queryFn: ({ signal }) => getTasks(signal) })
   const { orderedTasks, onDragEnd, isSaving } = useTaskOrder(tasksQuery.data ?? [])
@@ -100,14 +108,14 @@ export function TasksPage() {
   }, [])
 
   useEffect(() => {
-    if (!focusId || !tasksQuery.data) return
+    if (!focusId || activeView !== "all" || !tasksQuery.data) return
     const frame = requestAnimationFrame(() => {
       const card = document.getElementById(`task-${focusId}`)
       card?.scrollIntoView({ block: "center", behavior: "smooth" })
       card?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [focusId, tasksQuery.data])
+  }, [activeView, focusId, orderedTasks, tasksQuery.data])
 
   function openNewTask() {
     setEditingTask(null)
@@ -120,6 +128,19 @@ export function TasksPage() {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
       queryClient.invalidateQueries({ queryKey: ["reminders"] }),
     ])
+  }
+
+  async function runTaskWrite<T>(operation: () => Promise<T>): Promise<T> {
+    if (!writeCoordinator.tryAcquire("mutation")) {
+      const message = "另一项任务操作正在保存，请稍后重试"
+      toast.info(message)
+      throw new Error(message)
+    }
+    try {
+      return await operation()
+    } finally {
+      writeCoordinator.release("mutation")
+    }
   }
 
   const saveMutation = useMutation({
@@ -138,14 +159,14 @@ export function TasksPage() {
 
   const statusMutation = useMutation({
     mutationFn: ({ task, action }: { task: Task; action: "complete" | "reopen" }) => action === "complete" ? completeTask(task.id) : reopenTask(task.id),
-    onSuccess: (updated, variables) => {
+    onSuccess: async (updated, variables) => {
       queryClient.setQueryData<Task[]>(taskKeys.list(), (current = []) => current.map((task) => task.id === updated.id ? updated : task))
-      void invalidateTaskData()
+      await invalidateTaskData()
       if (variables.action === "complete") {
         toast.success("任务已完成", {
           action: {
             label: "撤销",
-            onClick: () => statusMutation.mutate({ task: updated, action: "reopen" }),
+            onClick: () => changeStatus(updated, "reopen"),
           },
         })
       } else {
@@ -179,23 +200,35 @@ export function TasksPage() {
   })
 
   const backupMutation = useMutation({
-    mutationFn: () => exportTasks(),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement("a")
-      anchor.href = url
-      anchor.download = `任务备份-${localDate(new Date())}.json`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      URL.revokeObjectURL(url)
-      toast.success("任务备份已下载")
+    mutationFn: async () => {
+      const blob = await exportTasks()
+      let url: string | null = null
+      let anchor: HTMLAnchorElement | null = null
+      try {
+        url = URL.createObjectURL(blob)
+        anchor = document.createElement("a")
+        anchor.href = url
+        anchor.download = `任务备份-${localDate(new Date())}.json`
+        document.body.appendChild(anchor)
+        anchor.click()
+      } finally {
+        try {
+          anchor?.remove()
+        } finally {
+          if (url) URL.revokeObjectURL(url)
+        }
+      }
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "备份失败，请重试。"),
+    onSuccess: () => toast.success("任务备份已下载"),
+    onError: (error) => toast.error(error instanceof Error ? `备份失败：${error.message}` : "备份失败，请重试。"),
   })
 
+  function changeStatus(task: Task, action: "complete" | "reopen") {
+    void runTaskWrite(() => statusMutation.mutateAsync({ task, action })).catch(() => undefined)
+  }
+
   async function submitTask(input: TaskInput) {
-    await saveMutation.mutateAsync({ id: editingTask?.id, input })
+    await runTaskWrite(() => saveMutation.mutateAsync({ id: editingTask?.id, input }))
   }
 
   const visibleTasks = filterTasks(orderedTasks, activeView)
@@ -210,10 +243,10 @@ export function TasksPage() {
           <p className="mt-2 text-sm text-muted-foreground">组织任务、明确下一步，通过拖拽调整执行顺序。</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setQuickAddOpen(true)}><Zap aria-hidden="true" />快速新建</Button>
+          <Button variant="outline" disabled={isSaving} onClick={() => setQuickAddOpen(true)}><Zap aria-hidden="true" />快速新建</Button>
           <Button variant="outline" disabled={backupMutation.isPending} onClick={() => backupMutation.mutate()}><Download aria-hidden="true" />{backupMutation.isPending ? "正在备份…" : "备份任务"}</Button>
-          <Button variant="outline" className="text-destructive hover:text-destructive" disabled={orderedTasks.length === 0} onClick={() => setClearOpen(true)}><Trash2 aria-hidden="true" />清空全部任务</Button>
-          <Button onClick={openNewTask}><Plus aria-hidden="true" />新建任务</Button>
+          <Button variant="outline" className="text-destructive hover:text-destructive" disabled={isSaving || orderedTasks.length === 0} onClick={() => setClearOpen(true)}><Trash2 aria-hidden="true" />清空全部任务</Button>
+          <Button disabled={isSaving} onClick={openNewTask}><Plus aria-hidden="true" />新建任务</Button>
         </div>
       </header>
 
@@ -250,14 +283,14 @@ export function TasksPage() {
                       onDragEnd={onDragEnd}
                       onEdit={(task) => { setEditingTask(task); setFormOpen(true) }}
                       onDelete={setDeletingTask}
-                      onComplete={(task) => statusMutation.mutate({ task, action: "complete" })}
-                      onReopen={(task) => statusMutation.mutate({ task, action: "reopen" })}
+                      onComplete={(task) => changeStatus(task, "complete")}
+                      onReopen={(task) => changeStatus(task, "reopen")}
                     />
                   ) : null}
                   {view.key === activeView && visibleTasks.length === 0 ? (
                     <>
                       <StatePanel status="empty" title={activeViewConfig.emptyTitle} description={activeViewConfig.emptyDescription} />
-                      <Button variant="outline" size="sm" className="mx-auto -mt-4 flex w-fit" onClick={openNewTask}><Plus aria-hidden="true" />添加任务</Button>
+                      <Button variant="outline" size="sm" className="mx-auto -mt-4 flex w-fit" disabled={isSaving} onClick={openNewTask}><Plus aria-hidden="true" />添加任务</Button>
                     </>
                   ) : null}
                 </TabsContent>
@@ -267,9 +300,9 @@ export function TasksPage() {
         </Card>
       ) : null}
 
-      <TaskFormDrawer open={formOpen} task={editingTask} onOpenChange={setFormOpen} onSubmit={submitTask} />
-      <QuickAddDrawer open={quickAddOpen} onOpenChange={setQuickAddOpen} onSubmit={async (input) => { await saveMutation.mutateAsync({ input }) }} />
-      <ClearTasksDialog open={clearOpen} onOpenChange={setClearOpen} onConfirm={() => clearMutation.mutate()} />
+      <TaskFormDrawer open={formOpen} task={editingTask} writePending={isSaving} onOpenChange={setFormOpen} onSubmit={submitTask} />
+      <QuickAddDrawer open={quickAddOpen} writePending={isSaving} onOpenChange={setQuickAddOpen} onSubmit={async (input) => { await runTaskWrite(() => saveMutation.mutateAsync({ input })) }} />
+      <ClearTasksDialog open={clearOpen} onOpenChange={setClearOpen} onConfirm={() => { void runTaskWrite(() => clearMutation.mutateAsync()).catch(() => undefined) }} />
       <ConfirmDialog
         open={deletingTask !== null}
         onOpenChange={(open) => { if (!open) setDeletingTask(null) }}
@@ -278,7 +311,7 @@ export function TasksPage() {
         cancelText="取消"
         actionText="删除任务"
         destructive
-        onConfirm={() => { if (deletingTask) deleteMutation.mutate(deletingTask) }}
+        onConfirm={() => { if (deletingTask) void runTaskWrite(() => deleteMutation.mutateAsync(deletingTask)).catch(() => undefined) }}
       />
     </section>
   )

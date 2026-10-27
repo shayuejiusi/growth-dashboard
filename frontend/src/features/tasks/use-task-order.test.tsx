@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import type { DragEndEvent } from "@dnd-kit/core"
 import type { ReactNode } from "react"
@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/lib/api/errors"
+import type { TaskWriteCoordinator } from "./task-write-coordinator"
 import type { Task } from "./types"
 import { useTaskOrder } from "./use-task-order"
 
@@ -33,13 +34,28 @@ function dragEvent(active: string, over: string): DragEndEvent {
   return { active: { id: active }, over: { id: over } } as DragEndEvent
 }
 
-function setup(tasks: Task[], reorder: (tasks: Task[]) => Promise<Task[]>) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+interface SetupOptions {
+  coordinator?: TaskWriteCoordinator
+  queryFn?: () => Promise<Task[]>
+  queryClient?: QueryClient
+}
+
+function setup(tasks: Task[], reorder: (tasks: Task[]) => Promise<Task[]>, options: SetupOptions = {}) {
+  const queryClient = options.queryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   queryClient.setQueryData(["tasks", "list"], tasks)
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
-  const view = renderHook(() => useTaskOrder(tasks, reorder), { wrapper })
+  const view = renderHook(() => {
+    useQuery({
+      queryKey: ["tasks", "list"],
+      queryFn: options.queryFn ?? (() => Promise.resolve(tasks)),
+      initialData: tasks,
+      staleTime: Number.POSITIVE_INFINITY,
+      retry: false,
+    })
+    return useTaskOrder(tasks, reorder, options.coordinator)
+  }, { wrapper })
   return { queryClient, ...view }
 }
 
@@ -131,5 +147,111 @@ describe("任务拖拽排序", () => {
       await saving
     })
     expect(result.current.isSaving).toBe(false)
+  })
+
+  it("其他任务写操作持锁时，底层同步拒绝排序且不发请求", async () => {
+    const a = makeTask("a", 0)
+    const b = makeTask("b", 1)
+    const reorder = vi.fn().mockResolvedValue([b, a])
+    const coordinator: TaskWriteCoordinator = {
+      tryAcquire: vi.fn(() => false),
+      release: vi.fn(),
+      getSnapshot: () => true,
+      subscribe: () => () => undefined,
+    }
+    const { result } = setup([a, b], reorder, { coordinator })
+
+    await act(() => result.current.onDragEnd(dragEvent(a.id, b.id)))
+
+    expect(reorder).not.toHaveBeenCalled()
+    expect(coordinator.release).not.toHaveBeenCalled()
+  })
+
+  it("409 后等待活动查询返回最新顺序和版本再解锁", async () => {
+    const a = makeTask("a", 0, 1)
+    const b = makeTask("b", 1, 1)
+    const latest = [
+      { ...a, title: "服务端最新 a", version: 8 },
+      { ...b, title: "服务端最新 b", version: 9 },
+    ]
+    let finishRefetch!: (tasks: Task[]) => void
+    const queryFn = vi.fn(() => new Promise<Task[]>((resolve) => { finishRefetch = resolve }))
+    const reorder = vi.fn().mockRejectedValue(new ApiError(409, "版本冲突", { code: "TASK_ORDER_CONFLICT" }))
+    vi.spyOn(toast, "error").mockImplementation(() => "")
+    const { result } = setup([a, b], reorder, { queryFn })
+
+    let saving!: Promise<void>
+    act(() => { saving = result.current.onDragEnd(dragEvent(a.id, b.id)) })
+    await waitFor(() => expect(queryFn).toHaveBeenCalled())
+    expect(result.current.isSaving).toBe(true)
+    await act(() => result.current.onDragEnd(dragEvent(a.id, b.id)))
+    expect(reorder).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      finishRefetch(latest)
+      await saving
+    })
+    expect(result.current.orderedTasks).toEqual(latest)
+    expect(result.current.isSaving).toBe(false)
+  })
+
+  it("409 刷新失败时结束锁定并给出可重试错误状态", async () => {
+    const a = makeTask("a", 0)
+    const b = makeTask("b", 1)
+    const reorder = vi.fn().mockRejectedValue(new ApiError(409, "版本冲突", { code: "TASK_ORDER_CONFLICT" }))
+    const error = vi.spyOn(toast, "error").mockImplementation(() => "")
+    const { result, queryClient } = setup([a, b], reorder, { queryFn: () => Promise.reject(new Error("刷新失败")) })
+
+    await act(() => result.current.onDragEnd(dragEvent(a.id, b.id)))
+
+    expect(result.current.isSaving).toBe(false)
+    expect(queryClient.getQueryState(["tasks", "list"])?.status).toBe("error")
+    expect(error).toHaveBeenCalledWith("最新任务顺序加载失败，请重新加载后重试")
+  })
+
+  it("pending 卸载会撤销乐观缓存，重新挂载不显示未确认顺序", async () => {
+    const a = makeTask("a", 0)
+    const b = makeTask("b", 1)
+    let finish!: (tasks: Task[]) => void
+    const reorder = vi.fn(() => new Promise<Task[]>((resolve) => { finish = resolve }))
+    const first = setup([a, b], reorder)
+
+    let saving!: Promise<void>
+    act(() => { saving = first.result.current.onDragEnd(dragEvent(a.id, b.id)) })
+    await waitFor(() => {
+      expect(first.queryClient.getQueryData<Task[]>(["tasks", "list"])?.map((task) => task.id)).toEqual([b.id, a.id])
+    })
+    first.unmount()
+
+    expect(first.queryClient.getQueryData<Task[]>(["tasks", "list"])?.map((task) => task.id)).toEqual([a.id, b.id])
+    const second = setup([a, b], reorder, { queryClient: first.queryClient })
+    expect(second.result.current.orderedTasks.map((task) => task.id)).toEqual([a.id, b.id])
+
+    await act(async () => {
+      finish([b, a])
+      await saving
+    })
+    expect(first.queryClient.getQueryData<Task[]>(["tasks", "list"])?.map((task) => task.id)).toEqual([b.id, a.id])
+  })
+
+  it("延迟排序失败不会用 previous 覆盖更新的缓存", async () => {
+    const a = makeTask("a", 0)
+    const b = makeTask("b", 1)
+    let fail!: (error: Error) => void
+    const reorder = vi.fn(() => new Promise<Task[]>((_resolve, reject) => { fail = reject }))
+    vi.spyOn(toast, "error").mockImplementation(() => "")
+    const { result, queryClient } = setup([a, b], reorder)
+
+    let saving!: Promise<void>
+    act(() => { saving = result.current.onDragEnd(dragEvent(a.id, b.id)) })
+    await waitFor(() => expect(result.current.isSaving).toBe(true))
+    const newer = [{ ...a, title: "较新的编辑", version: 7 }, b]
+    queryClient.setQueryData(["tasks", "list"], newer)
+    await act(async () => {
+      fail(new ApiError(500, "排序失败"))
+      await saving
+    })
+
+    expect(queryClient.getQueryData(["tasks", "list"])).toEqual(newer)
   })
 })
