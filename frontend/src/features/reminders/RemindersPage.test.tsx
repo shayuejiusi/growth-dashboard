@@ -175,6 +175,28 @@ describe("提醒中心", () => {
     expect(screen.queryByText("话术已复制")).not.toBeInTheDocument()
   })
 
+  it("同名话术场景的复制降级互不影响", async () => {
+    mockApi({
+      ...reminders,
+      scripts: [
+        { scene: "重复场景", text: "第一段同名话术" },
+        { scene: "重复场景", text: "第二段同名话术" },
+      ],
+    })
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"))
+    const user = userEvent.setup()
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    renderPage()
+
+    const headings = await screen.findAllByText("重复场景")
+    const cards = headings.map((heading) => heading.closest("[data-slot='card']") as HTMLElement)
+    await user.click(within(cards[0]).getByRole("button", { name: "复制话术" }))
+
+    expect(await within(cards[0]).findByRole("textbox", { name: "手动复制话术" })).toHaveValue("第一段同名话术")
+    expect(within(cards[1]).queryByRole("textbox", { name: "手动复制话术" })).not.toBeInTheDocument()
+    expect(screen.getAllByRole("textbox", { name: "手动复制话术" })).toHaveLength(1)
+  })
+
   it("没有话术时展示空状态", async () => {
     mockApi({ ...reminders, scripts: [] })
     renderPage()

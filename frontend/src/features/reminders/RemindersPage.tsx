@@ -126,7 +126,7 @@ function ScriptCard({ script, fallbackOpen, onFallback }: { script: ReminderScri
 
 export function RemindersPage() {
   const reminders = useQuery({ queryKey: reminderKeys.detail(), queryFn: ({ signal }) => getReminders(signal) })
-  const [fallbackScene, setFallbackScene] = useState<string | null>(null)
+  const [fallbackScript, setFallbackScript] = useState<number | null>(null)
 
   return (
     <section aria-labelledby="reminders-title" className="space-y-6">
@@ -183,12 +183,12 @@ export function RemindersPage() {
               <Card><CardContent><StatePanel status="empty" title="暂无可复制的话术" description="提醒数据仍可正常查看，话术将在生成后显示。" /></CardContent></Card>
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
-                {reminders.data.scripts.map((script) => (
+                {reminders.data.scripts.map((script, index) => (
                   <ScriptCard
-                    key={script.scene}
+                    key={`${script.scene}-${index}`}
                     script={script}
-                    fallbackOpen={fallbackScene === script.scene}
-                    onFallback={(open) => setFallbackScene(open ? script.scene : null)}
+                    fallbackOpen={fallbackScript === index}
+                    onFallback={(open) => setFallbackScript(open ? index : null)}
                   />
                 ))}
               </div>

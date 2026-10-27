@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -69,7 +69,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <MemoryRouter>
@@ -79,6 +79,7 @@ function renderPage() {
       </TooltipProvider>
     </QueryClientProvider>,
   )
+  return { queryClient, ...view }
 }
 
 describe("驾驶舱", () => {
@@ -86,7 +87,9 @@ describe("驾驶舱", () => {
     clearCsrfToken()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const { toast } = await import("sonner")
+    toast.dismiss()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -139,17 +142,18 @@ describe("驾驶舱", () => {
     expect(await screen.findByText("完成讲话稿")).toBeVisible()
   })
 
-  it("AI 状态失败不阻断任务数据，并可独立重试", async () => {
+  it("AI 状态重试期间锁定按钮，结束后恢复且不阻断任务数据", async () => {
     mockApi()
     let aiAttempts = 0
+    let finishRetry!: (response: Response) => void
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
       const path = String(input)
       if (path === "/api/dashboard") return jsonResponse(dashboard)
       if (path === "/api/ai/status") {
         aiAttempts += 1
-        return aiAttempts === 1
-          ? jsonResponse({ message: "AI 状态不可用" }, 500)
-          : jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
+        if (aiAttempts === 1) return jsonResponse({ message: "AI 状态不可用" }, 500)
+        if (aiAttempts === 2) return new Promise<Response>((resolve) => { finishRetry = resolve })
+        return jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
       }
       return jsonResponse({}, 500)
     })
@@ -157,9 +161,23 @@ describe("驾驶舱", () => {
     renderPage()
 
     expect(await screen.findByText("完成讲话稿")).toBeVisible()
-    expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("AI 状态暂时不可用"))).toBe(true)
     await user.click(screen.getByRole("button", { name: "重试 AI 状态" }))
+    const retrying = await screen.findByRole("button", { name: "正在重试" })
+    expect(retrying).toBeDisabled()
+    expect(retrying).toHaveAttribute("aria-busy", "true")
+    await user.click(retrying)
+    expect(aiAttempts).toBe(2)
+
+    await act(async () => {
+      finishRetry(jsonResponse({ message: "AI 状态仍不可用" }, 500))
+    })
+    const restored = await screen.findByRole("button", { name: "重试 AI 状态" })
+    expect(restored).toBeEnabled()
+    expect(restored).toHaveAttribute("aria-busy", "false")
+
+    await user.click(restored)
     expect(await screen.findByText("AI：本地规则引擎")).toBeVisible()
+    expect(screen.queryByRole("button", { name: "正在重试" })).not.toBeInTheDocument()
     expect(screen.queryByText("AI 状态暂时不可用")).not.toBeInTheDocument()
   })
 
@@ -180,24 +198,59 @@ describe("驾驶舱", () => {
     expect(screen.getByText("完成率").parentElement).toHaveTextContent("0%")
   })
 
-  it("快捷完成调用现有接口并刷新驾驶舱与提醒查询", async () => {
+  it("快捷完成真实失效 reminders/tasks 缓存，快速重复点击只发送一次", async () => {
     mockApi()
+    let finishComplete!: (response: Response) => void
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input)
       if (path === "/api/dashboard") return jsonResponse(dashboard)
       if (path === "/api/ai/status") return jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
       if (path === "/api/auth/csrf") return jsonResponse({ csrfToken: "test-csrf" })
-      if (path === "/api/tasks/task-1/complete") return jsonResponse({ ...task, status: "DONE" })
+      if (path === "/api/tasks/task-1/complete") return new Promise<Response>((resolve) => { finishComplete = resolve })
       return jsonResponse({ message: `未知请求 ${init?.method ?? "GET"} ${path}` }, 500)
     })
     const user = userEvent.setup()
-    renderPage()
+    const { queryClient } = renderPage()
+    queryClient.setQueryData(["reminders", "detail"], { cached: true })
+    queryClient.setQueryData(["tasks", "list"], [{ cached: true }])
 
-    await user.click(await screen.findByRole("button", { name: "完成“完成讲话稿”" }))
+    const button = await screen.findByRole("button", { name: "完成“完成讲话稿”" })
+    await user.click(button)
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/tasks/task-1/complete", expect.objectContaining({
       method: "POST",
       headers: expect.objectContaining({ "X-CSRF-TOKEN": "test-csrf" }),
     })))
+    expect(button).toBeDisabled()
+    await user.click(button)
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/tasks/task-1/complete")).toHaveLength(1)
+
+    await act(async () => {
+      finishComplete(jsonResponse({ ...task, status: "DONE" }))
+    })
+    await waitFor(() => {
+      expect(queryClient.getQueryState(["reminders", "detail"])?.isInvalidated).toBe(true)
+      expect(queryClient.getQueryState(["tasks", "list"])?.isInvalidated).toBe(true)
+    })
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/dashboard").length).toBeGreaterThanOrEqual(2))
+  })
+
+  it("快捷完成失败显示错误 Toast 并恢复按钮", async () => {
+    mockApi()
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path === "/api/dashboard") return jsonResponse(dashboard)
+      if (path === "/api/ai/status") return jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
+      if (path === "/api/auth/csrf") return jsonResponse({ csrfToken: "test-csrf" })
+      if (path === "/api/tasks/task-1/complete") return jsonResponse({ message: "任务完成失败，请稍后重试" }, 500)
+      return jsonResponse({}, 500)
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    const button = await screen.findByRole("button", { name: "完成“完成讲话稿”" })
+    await user.click(button)
+    expect(await screen.findByText("任务完成失败，请稍后重试")).toBeVisible()
+    expect(button).toBeEnabled()
+    expect(screen.queryByText("任务已完成")).not.toBeInTheDocument()
   })
 })

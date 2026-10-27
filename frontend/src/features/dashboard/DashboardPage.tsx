@@ -30,6 +30,7 @@ export function DashboardPage() {
   const queryClient = useQueryClient()
   const dashboard = useQuery({ queryKey: dashboardKeys.detail(), queryFn: ({ signal }) => getDashboard(signal) })
   const aiStatus = useQuery({ queryKey: ["ai", "status"], queryFn: ({ signal }) => getAiStatus(signal) })
+  const aiRetrying = aiStatus.isRefetching || (aiStatus.isPending && aiStatus.errorUpdatedAt > 0)
   const complete = useMutation({
     mutationFn: completeTask,
     onSuccess: async () => {
@@ -64,13 +65,20 @@ export function DashboardPage() {
         ) : null}
       </header>
 
-      {aiStatus.isError ? (
+      {aiStatus.isError || aiRetrying ? (
         <Alert>
           <AlertTitle>AI 状态暂时不可用</AlertTitle>
           <AlertDescription>
             <span>任务数据不受影响，可稍后重试状态检查。</span>
-            <Button variant="outline" size="sm" className="mt-2" onClick={() => void aiStatus.refetch()}>
-              <RefreshCw aria-hidden="true" />重试 AI 状态
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              disabled={aiRetrying}
+              aria-busy={aiRetrying}
+              onClick={() => void aiStatus.refetch()}
+            >
+              <RefreshCw aria-hidden="true" />{aiRetrying ? "正在重试" : "重试 AI 状态"}
             </Button>
           </AlertDescription>
         </Alert>
