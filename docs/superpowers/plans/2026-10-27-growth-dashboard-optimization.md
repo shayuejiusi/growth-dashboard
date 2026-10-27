@@ -13,7 +13,7 @@
 - 工作根目录固定为 `D:\kimi\Workspaces\待办优化\growth-dashboard`，不修改 `D:\kimi\Workspaces\看板生成\growth-dashboard` 原项目。
 - `growth-dashboard` 是唯一交付根目录：前端、后端、测试、组件源码、部署配置、启动脚本和文档全部放在其中；最终代码不得通过相对路径、绝对路径或构建脚本引用其他工作区文件。
 - 外部组件只在实施时作为复制来源，复制完成后源码归项目所有；Java、Maven、Node 和 npm 依赖通过标准工具安装，不将工具二进制或其他项目 node_modules 打入交付目录。
-- 当前没有 Git 仓库，不执行 `git init`、`git add` 或 `git commit`；每个 Task 以测试通过和构建产物作为检查点。
+- Git 仓库已初始化，远程为 `https://github.com/shayuejiusi/growth-dashboard.git`；每个 Task 在测试通过后单独提交，控制器完成规格与质量复核后再推送，不在 main 上直接推送未经复核的改动。
 - 后端 Java 使用 `C:\Users\22580\.jdks\ms-17.0.18`，Maven 使用 `D:\kimi\Workspaces\看板生成\tools-maven\bin\mvn`。
 - 能力成长地图、能力评估、驾驶舱能力摘要及其入口不进入前端；现有 CapabilityController、AssessmentController 及其数据不得删除。
 - 全站采用专业侧边导航、暖白与墨绿主题；桌面固定侧栏、平板可折叠、手机 Drawer 导航。
@@ -899,4 +899,4 @@ Expected: 后端测试和打包 PASS；前端 lint、单元/组件测试、构�
 - Spec coverage: Tasks 1–3 覆盖独立 API、安全、排序和搜索；Tasks 4–5 覆盖设计系统、路由、主题、认证和弹层；Tasks 6–9 覆盖所有保留模块并明确排除能力评估；Task 10 覆盖全局搜索、响应式、无障碍和动效；Task 11 覆盖独立部署与完整验收。
 - No placeholders: 所有接口、路径、类型和测试命令均明确；实现时不得以“后续再补”跳过测试。
 - Type consistency: 前端统一使用 TaskItem JSON 的 camelCase；排序统一提交 `{tasks:[{id,version}]}`；搜索统一返回 `{tasks,people,content}`；错误统一读取 ApiError。
-- Git: 用户已确认暂无仓库，因此本计划不包含提交步骤。
+- Git: 稳定基线已推送至 GitHub；后续每个 Task 独立提交，经复核后推送。
