@@ -36,7 +36,7 @@ public class TaskOrderService {
         Map<String, Integer> positions = IntStream.range(0, requested.size()).boxed()
                 .collect(toMap(i -> requested.get(i).id(), i -> i));
         current.forEach(e -> e.setPosition(positions.get(e.getId())));
-        return repo.saveAll(current).stream()
+        return repo.saveAllAndFlush(current).stream()
                 .sorted(Comparator.comparingInt(e -> positions.get(e.getId())))
                 .map(TaskEntity::toRecord).toList();
     }
@@ -46,10 +46,13 @@ public class TaskOrderService {
         Map<String, TaskEntity> byId = current.stream()
                 .collect(toMap(TaskEntity::getId, Function.identity()));
         Set<String> unique = new HashSet<>();
-        if (current.size() != requested.size()) {
+        if (requested == null || current.size() != requested.size()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "排序必须包含全部任务");
         }
         for (OrderItem item : requested) {
+            if (item == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "任务 ID 缺失、重复或无权访问");
+            }
             TaskEntity entity = byId.get(item.id());
             if (entity == null || !unique.add(item.id())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "任务 ID 缺失、重复或无权访问");

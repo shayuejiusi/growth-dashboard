@@ -14,6 +14,9 @@ public interface TaskRepository extends JpaRepository<TaskEntity, String> {
 
     List<TaskEntity> findByOwnerOrderByPositionAscCreatedAtAsc(String owner);
 
+    @Query("select coalesce(max(t.position), -1) from TaskEntity t where t.owner = :owner")
+    int findMaxPositionByOwner(@Param("owner") String owner);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from TaskEntity t where t.owner = :owner")
     List<TaskEntity> findByOwnerForUpdate(@Param("owner") String owner);

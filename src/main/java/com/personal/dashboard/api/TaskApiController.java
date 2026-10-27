@@ -68,7 +68,7 @@ public class TaskApiController {
                 req.needReport(), req.capabilities(), req.note(),
                 blank(req.category()), blank(req.source()), blank(req.nextStep()),
                 blank(req.expectedOutcome()), blank(req.blocker()), parseRepeat(req.repeatType()));
-        int position = repo.findByOwnerOrderByPositionAscCreatedAtAsc(user.username()).size();
+        int position = repo.findMaxPositionByOwner(user.username()) + 1;
         task = task.withOrder(position, 0);
         repo.save(TaskEntity.from(task, user.username()));
         return task;
