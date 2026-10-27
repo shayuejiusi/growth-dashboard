@@ -162,6 +162,27 @@ describe("API client", () => {
   })
 
   it.each([
+    ["null", null],
+    ["primitive JSON", "invalid"],
+    ["array", ["invalid"]],
+  ])("uses a stable ApiError for a non-object JSON error body: %s", async (_label, body) => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(body), {
+      status: 502,
+      headers: { "Content-Type": "application/json", "X-Request-ID": "req-shape" },
+    }))
+
+    const error = await api("/api/tasks").catch((reason: unknown) => reason)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      status: 502,
+      code: "HTTP_ERROR",
+      message: "请求失败（502）",
+      requestId: "req-shape",
+      path: "/api/tasks",
+    })
+  })
+
+  it.each([
     ["network failure", () => Promise.reject(new TypeError("network offline"))],
     ["non-2xx response", () => Promise.resolve(jsonResponse({ message: "暂不可用" }, 503))],
     ["invalid response", () => Promise.resolve(jsonResponse({}))],

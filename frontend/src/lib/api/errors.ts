@@ -30,7 +30,10 @@ export async function toApiError(response: Response, path: string): Promise<ApiE
   const text = await response.text()
   if (text) {
     try {
-      payload = JSON.parse(text) as ApiErrorPayload
+      const parsed: unknown = JSON.parse(text)
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        payload = parsed as ApiErrorPayload
+      }
     } catch {
       // 非 JSON 错误响应使用稳定中文回退，不暴露 SyntaxError。
     }
