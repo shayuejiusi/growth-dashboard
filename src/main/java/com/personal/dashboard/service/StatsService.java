@@ -26,7 +26,7 @@ public class StatsService {
 
     /** 指定用户的全部任务（数据按用户隔离）；读取时对每日/每周必做任务做自动恢复 */
     public List<TaskItem> tasks(String owner) {
-        List<TaskEntity> entities = repo.findByOwner(owner);
+        List<TaskEntity> entities = repo.findByOwnerOrderByPositionAscCreatedAtAsc(owner);
         List<TaskItem> tasks = new java.util.ArrayList<>();
         for (TaskEntity e : entities) {
             TaskItem t = e.toRecord();

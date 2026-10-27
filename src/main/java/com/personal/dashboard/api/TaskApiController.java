@@ -5,6 +5,7 @@ import com.personal.dashboard.model.TaskItem;
 import com.personal.dashboard.model.User;
 import com.personal.dashboard.repo.TaskRepository;
 import com.personal.dashboard.service.StatsService;
+import com.personal.dashboard.service.TaskOrderService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,10 +22,12 @@ public class TaskApiController {
 
     private final StatsService stats;
     private final TaskRepository repo;
+    private final TaskOrderService taskOrder;
 
-    public TaskApiController(StatsService stats, TaskRepository repo) {
+    public TaskApiController(StatsService stats, TaskRepository repo, TaskOrderService taskOrder) {
         this.stats = stats;
         this.repo = repo;
+        this.taskOrder = taskOrder;
     }
 
     /**
@@ -55,6 +58,8 @@ public class TaskApiController {
                                 String category, String source, String nextStep,
                                 String expectedOutcome, String blocker, String repeatType) {}
 
+    public record OrderRequest(List<TaskOrderService.OrderItem> tasks) {}
+
     @PostMapping
     public TaskItem create(@Valid @RequestBody CreateRequest req,
                            @RequestAttribute("currentUser") User user) {
@@ -63,8 +68,16 @@ public class TaskApiController {
                 req.needReport(), req.capabilities(), req.note(),
                 blank(req.category()), blank(req.source()), blank(req.nextStep()),
                 blank(req.expectedOutcome()), blank(req.blocker()), parseRepeat(req.repeatType()));
+        int position = repo.findByOwnerOrderByPositionAscCreatedAtAsc(user.username()).size();
+        task = task.withOrder(position, 0);
         repo.save(TaskEntity.from(task, user.username()));
         return task;
+    }
+
+    @PutMapping("/order")
+    public List<TaskItem> reorder(@RequestBody OrderRequest req,
+                                  @RequestAttribute("currentUser") User user) {
+        return taskOrder.reorder(user.username(), req.tasks());
     }
 
     @PutMapping("/{id}")
@@ -79,7 +92,8 @@ public class TaskApiController {
                     req.capabilities() == null ? old.capabilities() : req.capabilities(),
                     req.note(), old.createdAt(), old.completedAt(),
                     blank(req.category()), blank(req.source()), blank(req.nextStep()),
-                    blank(req.expectedOutcome()), blank(req.blocker()), parseRepeat(req.repeatType()));
+                    blank(req.expectedOutcome()), blank(req.blocker()), parseRepeat(req.repeatType()),
+                    old.position(), old.version());
             repo.save(TaskEntity.from(merged, user.username()));
             return ResponseEntity.ok(merged);
         }).orElseThrow(() -> ApiException.notFound("任务不存在"));
@@ -121,7 +135,7 @@ public class TaskApiController {
     /** 清空当前用户的全部任务 */
     @DeleteMapping
     public Map<String, Object> clearAll(@RequestAttribute("currentUser") User user) {
-        List<TaskEntity> mine = repo.findByOwner(user.username());
+        List<TaskEntity> mine = repo.findByOwnerOrderByPositionAscCreatedAtAsc(user.username());
         repo.deleteAll(mine);
         return Map.of("deleted", mine.size());
     }

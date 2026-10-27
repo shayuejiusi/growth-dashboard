@@ -50,6 +50,7 @@ public class ApiExceptionHandler {
             case 401 -> "UNAUTHORIZED";
             case 403 -> "FORBIDDEN";
             case 404 -> "NOT_FOUND";
+            case 409 -> "TASK_ORDER_CONFLICT";
             default -> "HTTP_ERROR";
         };
         HttpStatus resolved = HttpStatus.resolve(status.value());

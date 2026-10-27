@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -75,6 +76,13 @@ public class TaskEntity {
     @Column(nullable = false, length = 10)
     private TaskItem.RepeatType repeatType = TaskItem.RepeatType.NONE;
 
+    @Column(nullable = false)
+    private int position = 0;
+
+    @Version
+    @Column(nullable = false)
+    private long version = 0;
+
     protected TaskEntity() {}
 
     public static TaskEntity from(TaskItem t) {
@@ -100,6 +108,8 @@ public class TaskEntity {
         e.expectedOutcome = t.expectedOutcome();
         e.blocker = t.blocker();
         e.repeatType = t.repeatType() == null ? TaskItem.RepeatType.NONE : t.repeatType();
+        e.position = t.position() == null ? 0 : t.position();
+        e.version = t.version() == null ? 0 : t.version();
         return e;
     }
 
@@ -107,7 +117,8 @@ public class TaskEntity {
         return new TaskItem(id, title, priority, dueDate, status, needReport,
                 readCaps(capabilitiesJson), note, createdAt, completedAt,
                 category, source, nextStep, expectedOutcome, blocker,
-                repeatType == null ? TaskItem.RepeatType.NONE : repeatType);
+                repeatType == null ? TaskItem.RepeatType.NONE : repeatType,
+                position, version);
     }
 
     private static String writeCaps(List<String> caps) {
@@ -128,5 +139,7 @@ public class TaskEntity {
 
     public String getId() { return id; }
     public String getOwner() { return owner; }
+    public long getVersion() { return version; }
     public void setOwner(String owner) { this.owner = owner; }
+    public void setPosition(int position) { this.position = position; }
 }

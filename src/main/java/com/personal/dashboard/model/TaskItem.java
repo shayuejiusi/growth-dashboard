@@ -26,11 +26,24 @@ public record TaskItem(
         String nextStep,        // 下一步具体做什么
         String expectedOutcome, // 预期成果
         String blocker,         // 阻塞点
-        RepeatType repeatType   // 重复类型：NONE 普通 / DAILY 每日必做 / WEEKLY 每周必做
+        RepeatType repeatType,  // 重复类型：NONE 普通 / DAILY 每日必做 / WEEKLY 每周必做
+        Integer position,
+        Long version
 ) {
     public enum Priority { P0, P1, P2 }
     public enum Status { TODO, DOING, DONE }
     public enum RepeatType { NONE, DAILY, WEEKLY }
+
+    /** 保留旧 16 参数构造签名，兼容既有调用方。 */
+    public TaskItem(String id, String title, Priority priority, LocalDate dueDate,
+                    Status status, boolean needReport, List<String> capabilities, String note,
+                    LocalDateTime createdAt, LocalDateTime completedAt, String category,
+                    String source, String nextStep, String expectedOutcome, String blocker,
+                    RepeatType repeatType) {
+        this(id, title, priority, dueDate, status, needReport, capabilities, note,
+                createdAt, completedAt, category, source, nextStep, expectedOutcome,
+                blocker, repeatType, null, null);
+    }
 
     /** 新建任务（简版，兼容 AI 识别导入） */
     public static TaskItem create(String title, Priority priority, LocalDate dueDate,
@@ -52,11 +65,18 @@ public record TaskItem(
                 repeatType == null ? RepeatType.NONE : repeatType);
     }
 
+    public TaskItem withOrder(int newPosition, long newVersion) {
+        return new TaskItem(id, title, priority, dueDate, status, needReport,
+                capabilities, note, createdAt, completedAt, category, source, nextStep,
+                expectedOutcome, blocker, repeatType, newPosition, newVersion);
+    }
+
     public TaskItem withStatus(Status newStatus) {
         return new TaskItem(id, title, priority, dueDate, newStatus, needReport,
                 capabilities, note, createdAt,
                 newStatus == Status.DONE ? LocalDateTime.now() : null,
-                category, source, nextStep, expectedOutcome, blocker, repeatType);
+                category, source, nextStep, expectedOutcome, blocker, repeatType,
+                position, version);
     }
 
     public boolean isOverdue() {
@@ -97,7 +117,8 @@ public record TaskItem(
         } while (!next.isAfter(threshold));
         return new TaskItem(id, title, priority, next, status, needReport,
                 capabilities, note, createdAt, completedAt,
-                category, source, nextStep, expectedOutcome, blocker, repeatType);
+                category, source, nextStep, expectedOutcome, blocker, repeatType,
+                position, version);
     }
 
     /**
