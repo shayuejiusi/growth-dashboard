@@ -57,7 +57,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                     || path.startsWith("/api/admin"));
             case 3 -> path.startsWith("/api/dashboard") || path.startsWith("/api/tasks")
                     || path.startsWith("/api/reminders") || path.startsWith("/api/auth/")
-                    || path.startsWith("/api/ai/");
+                    || path.startsWith("/api/ai/") || path.startsWith("/api/search");
             default -> false;
         };
         if (!allowed) {
