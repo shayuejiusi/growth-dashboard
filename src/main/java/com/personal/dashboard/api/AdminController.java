@@ -49,13 +49,9 @@ public class AdminController {
 
     @PostMapping
     public ResponseEntity<?> add(@RequestBody AddUserRequest req) {
-        try {
-            User u = auth.addUser(req.username(), req.name(), req.level(), req.password());
-            return ResponseEntity.ok(Map.of("username", u.username(), "name", u.name(),
-                    "level", u.level(), "assessmentStatus", u.assessmentStatus()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        User u = auth.addUser(req.username(), req.name(), req.level(), req.password());
+        return ResponseEntity.ok(Map.of("username", u.username(), "name", u.name(),
+                "level", u.level(), "assessmentStatus", u.assessmentStatus()));
     }
 
     public record PasswordRequest(String password) {}
@@ -63,20 +59,17 @@ public class AdminController {
     /** 重置密码（重置后该用户所有会话失效，需重新登录） */
     @PostMapping("/{username}/reset-password")
     public ResponseEntity<?> resetPassword(@PathVariable String username, @RequestBody PasswordRequest req) {
-        try {
-            return auth.resetPassword(username, req.password())
-                    ? ResponseEntity.ok(Map.of("ok", true))
-                    : ResponseEntity.status(404).body(Map.of("error", "用户不存在"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        if (!auth.resetPassword(username, req.password())) {
+            throw ApiException.notFound("用户不存在");
         }
+        return ResponseEntity.ok(Map.of("ok", true));
     }
 
     /** 恢复评估资格：状态重置为 NONE，清除缓存试卷与历史结果，可重新评估 */
     @PostMapping("/{username}/reset-assessment")
     public ResponseEntity<?> resetAssessment(@PathVariable String username) {
         User target = auth.users().stream().filter(u -> u.username().equals(username)).findFirst().orElse(null);
-        if (target == null) return ResponseEntity.status(404).body(Map.of("error", "用户不存在"));
+        if (target == null) throw ApiException.notFound("用户不存在");
 
         auth.saveUser(target.withAssessmentStatus("NONE"));
         paperStore.remove(username);
@@ -90,11 +83,7 @@ public class AdminController {
     @DeleteMapping("/{username}")
     public ResponseEntity<?> delete(@PathVariable String username, HttpServletRequest req) {
         User operator = (User) req.getAttribute("currentUser");
-        try {
-            auth.deleteUser(username, operator.username());
-            return ResponseEntity.ok(Map.of("deleted", true));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        auth.deleteUser(username, operator.username());
+        return ResponseEntity.ok(Map.of("deleted", true));
     }
 }

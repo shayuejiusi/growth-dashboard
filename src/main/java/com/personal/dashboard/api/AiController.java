@@ -53,13 +53,9 @@ public class AiController {
     public org.springframework.http.ResponseEntity<?> extractText(
             @RequestParam("file") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
-        try {
-            String text = extractor.extract(filename, file.getBytes());
-            return org.springframework.http.ResponseEntity.ok(
-                    Map.of("filename", filename, "text", text, "chars", text.length()));
-        } catch (IllegalArgumentException e) {
-            return org.springframework.http.ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        String text = extractor.extract(filename, file.getBytes());
+        return org.springframework.http.ResponseEntity.ok(
+                Map.of("filename", filename, "text", text, "chars", text.length()));
     }
 
     /** 文档识别并一键导入任务清单（导入到当前用户名下） */

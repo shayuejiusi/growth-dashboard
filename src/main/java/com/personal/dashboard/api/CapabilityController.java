@@ -56,7 +56,7 @@ public class CapabilityController {
             e.setTarget(Math.max(1, Math.min(5, req.target())));
             repo.save(e);
             return ResponseEntity.ok(e.toRecord());
-        }).orElse(ResponseEntity.notFound().build());
+        }).orElseThrow(() -> ApiException.notFound("能力维度不存在"));
     }
 
     /** AI 自动评估：依据待办完成情况重新打分（按当前用户的任务数据） */

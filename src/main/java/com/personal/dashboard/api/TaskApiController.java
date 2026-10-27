@@ -82,7 +82,7 @@ public class TaskApiController {
                     blank(req.expectedOutcome()), blank(req.blocker()), parseRepeat(req.repeatType()));
             repo.save(TaskEntity.from(merged, user.username()));
             return ResponseEntity.ok(merged);
-        }).orElse(ResponseEntity.notFound().build());
+        }).orElseThrow(() -> ApiException.notFound("任务不存在"));
     }
 
     @PostMapping("/{id}/complete")
@@ -106,7 +106,7 @@ public class TaskApiController {
             }
             repo.save(TaskEntity.from(updated, user.username()));
             return ResponseEntity.ok(updated);
-        }).orElse(ResponseEntity.notFound().build());
+        }).orElseThrow(() -> ApiException.notFound("任务不存在"));
     }
 
     @DeleteMapping("/{id}")
@@ -115,7 +115,7 @@ public class TaskApiController {
         return repo.findByIdAndOwner(id, user.username()).map(e -> {
             repo.deleteById(id);
             return ResponseEntity.ok(Map.<String, Object>of("deleted", true));
-        }).orElse(ResponseEntity.notFound().build());
+        }).orElseThrow(() -> ApiException.notFound("任务不存在"));
     }
 
     /** 清空当前用户的全部任务 */

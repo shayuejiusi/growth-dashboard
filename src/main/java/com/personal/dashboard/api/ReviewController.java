@@ -33,7 +33,7 @@ public class ReviewController {
     @GetMapping("/daily")
     public ResponseEntity<ReviewDraft> latest(@RequestAttribute("currentUser") com.personal.dashboard.model.User user) {
         String key = reviewKey(user.username());
-        if (!docs.exists(key)) return ResponseEntity.notFound().build();
+        if (!docs.exists(key)) throw ApiException.notFound("复盘草稿不存在");
         return ResponseEntity.ok(docs.load(key, new TypeReference<>() {}, () -> null));
     }
 

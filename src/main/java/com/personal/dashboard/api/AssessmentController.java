@@ -75,8 +75,8 @@ public class AssessmentController {
     public ResponseEntity<?> questions(HttpServletRequest req) {
         User u = currentUser(req);
         if (!"NONE".equals(u.assessmentStatus())) {
-            return ResponseEntity.status(409)
-                    .body(Map.of("error", "您已" + ("SKIPPED".equals(u.assessmentStatus()) ? "跳过" : "完成") + "评估，该功能不可用"));
+            throw ApiException.conflict("您已" + ("SKIPPED".equals(u.assessmentStatus()) ? "跳过" : "完成")
+                    + "评估，该功能不可用");
         }
         List<AssessmentQuestion> paper = paperStore.computeIfAbsent(u.username(),
                 () -> ai.generateAssessmentQuestions(new AssessmentContext(DIMENSIONS, u.name())));
@@ -90,11 +90,11 @@ public class AssessmentController {
     public ResponseEntity<?> submit(HttpServletRequest req, @RequestBody SubmitRequest body) {
         User u = currentUser(req);
         if (!"NONE".equals(u.assessmentStatus())) {
-            return ResponseEntity.status(409).body(Map.of("error", "评估功能已不可用"));
+            throw ApiException.conflict("评估功能已不可用");
         }
         List<AssessmentQuestion> paper = paperStore.get(u.username());
         if (paper == null || paper.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "请先获取评估题目"));
+            throw ApiException.badRequest("请先获取评估题目");
         }
         Map<String, Integer> answers = body.answers() == null ? Map.of() : body.answers();
 
@@ -104,7 +104,7 @@ public class AssessmentController {
         for (AssessmentQuestion q : paper) {
             Integer choice = answers.get(q.id());
             if (choice == null || choice < 0 || choice >= q.options().size()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "题目 " + q.id() + " 尚未作答"));
+                throw ApiException.badRequest("题目 " + q.id() + " 尚未作答");
             }
             AssessmentQuestion.Option opt = q.options().get(choice);
             dimScores.computeIfAbsent(q.dimension(), k -> new ArrayList<>()).add(opt.score());
@@ -150,7 +150,7 @@ public class AssessmentController {
     public ResponseEntity<?> skip(HttpServletRequest req) {
         User u = currentUser(req);
         if (!"NONE".equals(u.assessmentStatus())) {
-            return ResponseEntity.status(409).body(Map.of("error", "评估功能已不可用"));
+            throw ApiException.conflict("评估功能已不可用");
         }
         auth.saveUser(u.withAssessmentStatus("SKIPPED"));
         paperStore.remove(u.username());

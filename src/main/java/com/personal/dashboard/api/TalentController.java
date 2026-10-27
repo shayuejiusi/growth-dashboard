@@ -65,7 +65,7 @@ public class TalentController {
                 return ResponseEntity.ok(updated);
             }
         }
-        return ResponseEntity.notFound().build();
+        throw ApiException.notFound("人员记录不存在");
     }
 
     @DeleteMapping("/people/{id}")
@@ -73,8 +73,9 @@ public class TalentController {
         TalentBoard b = board();
         List<PersonNote> people = new ArrayList<>(b.people());
         boolean removed = people.removeIf(p -> p.id().equals(id));
-        if (removed) docs.save("talent", new TalentBoard(b.rosters(), people));
-        return removed ? ResponseEntity.ok(Map.of("deleted", true)) : ResponseEntity.notFound().build();
+        if (!removed) throw ApiException.notFound("人员记录不存在");
+        docs.save("talent", new TalentBoard(b.rosters(), people));
+        return ResponseEntity.ok(Map.of("deleted", true));
     }
 
     // ==================== 花名册分组管理 ====================
@@ -85,16 +86,16 @@ public class TalentController {
     @PostMapping("/rosters")
     public ResponseEntity<?> addRoster(@RequestBody RosterRequest req) {
         if (req.name() == null || req.name().isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "名册名称不能为空"));
+            throw ApiException.badRequest("名册名称不能为空");
         }
         String name = req.name().trim();
         if (name.length() > 20) {
-            return ResponseEntity.badRequest().body(Map.of("error", "名册名称最长 20 字"));
+            throw ApiException.badRequest("名册名称最长 20 字");
         }
         TalentBoard b = board();
         Map<String, List<TalentBoard.Member>> rosters = new LinkedHashMap<>(b.rosters());
         if (rosters.containsKey(name)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "名册「" + name + "」已存在"));
+            throw ApiException.badRequest("名册「" + name + "」已存在");
         }
         rosters.put(name, new ArrayList<>());
         docs.save("talent", new TalentBoard(rosters, b.people()));
@@ -106,7 +107,7 @@ public class TalentController {
     public ResponseEntity<?> deleteRoster(@PathVariable String roster) {
         TalentBoard b = board();
         Map<String, List<TalentBoard.Member>> rosters = new LinkedHashMap<>(b.rosters());
-        if (!rosters.containsKey(roster)) return ResponseEntity.notFound().build();
+        if (!rosters.containsKey(roster)) throw ApiException.notFound("花名册不存在");
         int memberCount = rosters.get(roster).size();
         rosters.remove(roster);
         List<PersonNote> people = new ArrayList<>(b.people());
@@ -125,13 +126,13 @@ public class TalentController {
     @PostMapping("/rosters/{roster}/members")
     public ResponseEntity<?> addMember(@PathVariable String roster, @RequestBody MemberRequest req) {
         if (req.name() == null || req.name().isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "姓名不能为空"));
+            throw ApiException.badRequest("姓名不能为空");
         }
         TalentBoard b = board();
         Map<String, List<TalentBoard.Member>> rosters = new LinkedHashMap<>(b.rosters());
         List<TalentBoard.Member> members = new ArrayList<>(rosters.getOrDefault(roster, List.of()));
         if (rosters.values().stream().flatMap(List::stream).anyMatch(m -> m.name().equals(req.name().trim()))) {
-            return ResponseEntity.badRequest().body(Map.of("error", "该姓名已存在于花名册中"));
+            throw ApiException.badRequest("该姓名已存在于花名册中");
         }
         members.add(new TalentBoard.Member(req.name().trim(),
                 req.role() == null || req.role().isBlank() ? "成员" : req.role().trim()));
@@ -145,7 +146,7 @@ public class TalentController {
     public ResponseEntity<?> updateMember(@PathVariable String roster, @PathVariable String name,
                                           @RequestBody MemberRequest req) {
         if (req.name() == null || req.name().isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "姓名不能为空"));
+            throw ApiException.badRequest("姓名不能为空");
         }
         TalentBoard b = board();
         Map<String, List<TalentBoard.Member>> rosters = new LinkedHashMap<>(b.rosters());
@@ -154,11 +155,11 @@ public class TalentController {
         for (int i = 0; i < members.size(); i++) {
             if (members.get(i).name().equals(name)) { idx = i; break; }
         }
-        if (idx < 0) return ResponseEntity.notFound().build();
+        if (idx < 0) throw ApiException.notFound("成员不存在");
         String newName = req.name().trim();
         if (!newName.equals(name)
                 && rosters.values().stream().flatMap(List::stream).anyMatch(m -> m.name().equals(newName))) {
-            return ResponseEntity.badRequest().body(Map.of("error", "该姓名已存在于花名册中"));
+            throw ApiException.badRequest("该姓名已存在于花名册中");
         }
         members.set(idx, new TalentBoard.Member(newName,
                 req.role() == null || req.role().isBlank() ? members.get(idx).role() : req.role().trim()));
@@ -186,7 +187,7 @@ public class TalentController {
         Map<String, List<TalentBoard.Member>> rosters = new LinkedHashMap<>(b.rosters());
         List<TalentBoard.Member> members = new ArrayList<>(rosters.getOrDefault(roster, List.of()));
         boolean removed = members.removeIf(m -> m.name().equals(name));
-        if (!removed) return ResponseEntity.notFound().build();
+        if (!removed) throw ApiException.notFound("成员不存在");
         rosters.put(roster, members);
         List<PersonNote> people = new ArrayList<>(b.people());
         int removedNotes = people.size();

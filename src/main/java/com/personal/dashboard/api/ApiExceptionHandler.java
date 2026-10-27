@@ -23,6 +23,11 @@ public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ApiError> business(ApiException ex, HttpServletRequest req) {
+        return response(ex.status(), ex.code(), ex.getMessage(), req);
+    }
+
     @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class,
             ConstraintViolationException.class, HttpMessageNotReadableException.class,
             MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class,

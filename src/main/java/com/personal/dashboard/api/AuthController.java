@@ -31,12 +31,11 @@ public class AuthController {
     public record LoginRequest(String username, String password) {}
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest req, HttpServletRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
         AuthService.AuthSession session = auth.login(req.username() == null ? "" : req.username().trim(),
                 req.password() == null ? "" : req.password());
         if (session == null) {
-            return ResponseEntity.status(401).body(ApiError.of(401, "UNAUTHORIZED",
-                    "用户名或密码错误", request.getRequestURI()));
+            throw ApiException.unauthorized("用户名或密码错误");
         }
         User u = session.user();
         Map<String, Object> out = new LinkedHashMap<>();
@@ -53,8 +52,7 @@ public class AuthController {
     public ResponseEntity<?> csrf(HttpServletRequest req) {
         String csrf = auth.csrfToken((String) req.getAttribute("authToken"));
         if (csrf == null) {
-            return ResponseEntity.status(401).body(ApiError.of(401, "UNAUTHORIZED",
-                    "未登录或会话已过期", req.getRequestURI()));
+            throw ApiException.unauthorized("未登录或会话已过期");
         }
         return ResponseEntity.ok(Map.of("csrfToken", csrf));
     }
