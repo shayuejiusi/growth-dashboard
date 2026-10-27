@@ -1,4 +1,4 @@
-import { toApiError } from "./errors"
+import { ApiError, parseApiResponse } from "./errors"
 import type { ApiOptions } from "./types"
 
 let cachedCsrfToken: string | null = null
@@ -30,9 +30,14 @@ async function csrfToken(): Promise<string> {
     credentials: "include",
   }).then(async (response) => {
     if (response.status === 401) emitUnauthorized()
-    if (!response.ok) throw await toApiError(response)
-    const data = await response.json() as { csrfToken?: string }
-    if (!data.csrfToken) throw new Error("CSRF 响应缺少令牌")
+    const data = await parseApiResponse<{ csrfToken?: string } | undefined>(response, "/api/auth/csrf")
+    if (!data?.csrfToken) {
+      throw new ApiError(response.status, "CSRF 响应缺少有效令牌", {
+        code: "INVALID_RESPONSE",
+        requestId: response.headers.get("X-Request-ID") ?? undefined,
+        path: "/api/auth/csrf",
+      })
+    }
     cachedCsrfToken = data.csrfToken
     return data.csrfToken
   }).finally(() => {
@@ -58,6 +63,5 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   })
   if (response.status === 401 && !options.skipUnauthorizedEvent) emitUnauthorized()
-  if (!response.ok) throw await toApiError(response)
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>
+  return parseApiResponse<T>(response, path)
 }

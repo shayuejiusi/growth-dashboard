@@ -6,6 +6,7 @@ import { clearCsrfToken, resetUnauthorized } from "@/lib/api/client"
 import App from "./App"
 
 const admin = { username: "admin", name: "系统管理员", level: 1 }
+const manager = { username: "manager", name: "内容经理", level: 2 }
 const staff = { username: "staff", name: "普通成员", level: 3 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -39,8 +40,8 @@ describe("认证与路由", () => {
     expect(container).not.toHaveTextContent("能力评估")
   })
 
-  it("登录成功后恢复原路径和查询参数", async () => {
-    window.history.replaceState({}, "", "/tasks?filter=today")
+  it("登录成功后恢复原路径、查询参数和 hash", async () => {
+    window.history.replaceState({}, "", "/tasks?filter=today#upcoming")
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse({ message: "未登录" }, 401))
       .mockResolvedValueOnce(jsonResponse(admin))
@@ -54,6 +55,7 @@ describe("认证与路由", () => {
     expect(await screen.findByRole("heading", { name: "任务管理" })).toBeInTheDocument()
     expect(window.location.pathname).toBe("/tasks")
     expect(window.location.search).toBe("?filter=today")
+    expect(window.location.hash).toBe("#upcoming")
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
@@ -100,6 +102,18 @@ describe("认证与路由", () => {
     },
   )
 
+  it.each(["/admin/users", "/review", "/talent"])(
+    "二级权限不能通过直接地址访问一级路由 %s",
+    async (path) => {
+      window.history.replaceState({}, "", path)
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(manager))
+      render(<App />)
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("没有访问权限")
+      expect(screen.getByRole("heading", { name: "工作台" })).toBeInTheDocument()
+    },
+  )
+
   it("已登录会话失效时清空会话并返回登录页", async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(admin))
     render(<App />)
@@ -110,6 +124,28 @@ describe("认证与路由", () => {
     })
 
     expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeInTheDocument()
+  })
+
+  it("登出携带 CSRF、清理会话并返回登录页", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(admin))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "logout-csrf" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole("heading", { name: "工作台" })
+
+    await user.click(screen.getByRole("button", { name: "打开用户菜单" }))
+    await user.click(screen.getByRole("menuitem", { name: "退出登录" }))
+
+    expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeInTheDocument()
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/auth/csrf", expect.objectContaining({ credentials: "include" }))
+    expect(fetch).toHaveBeenLastCalledWith("/api/auth/logout", expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+      headers: expect.objectContaining({ "X-CSRF-TOKEN": "logout-csrf" }),
+    }))
   })
 
   it("未知及能力相关地址不暴露后续模块", async () => {

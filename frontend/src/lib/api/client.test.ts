@@ -119,4 +119,79 @@ describe("API client", () => {
     expect(listener).not.toHaveBeenCalled()
     window.removeEventListener("auth:unauthorized", listener)
   })
+
+  it.each([200, 205])("returns undefined for an empty %s response", async (status) => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status }))
+
+    await expect(api<void>("/api/tasks/empty")).resolves.toBeUndefined()
+  })
+
+  it("converts a non-JSON success response to a stable ApiError", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("plain text", {
+      status: 200,
+      headers: { "Content-Type": "text/plain", "X-Request-ID": "req-success" },
+    }))
+
+    const error = await api("/api/tasks").catch((reason: unknown) => reason)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).not.toBeInstanceOf(SyntaxError)
+    expect(error).toMatchObject({
+      status: 200,
+      code: "INVALID_RESPONSE",
+      message: "服务器返回了无法解析的响应",
+      requestId: "req-success",
+      path: "/api/tasks",
+    })
+  })
+
+  it("keeps a stable fallback for a non-JSON error response", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("Bad Gateway", {
+      status: 502,
+      headers: { "Content-Type": "text/plain", "X-Request-ID": "req-error" },
+    }))
+
+    const error = await api("/api/tasks").catch((reason: unknown) => reason)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      status: 502,
+      code: "HTTP_ERROR",
+      message: "请求失败（502）",
+      requestId: "req-error",
+      path: "/api/tasks",
+    })
+  })
+
+  it.each([
+    ["network failure", () => Promise.reject(new TypeError("network offline"))],
+    ["non-2xx response", () => Promise.resolve(jsonResponse({ message: "暂不可用" }, 503))],
+    ["invalid response", () => Promise.resolve(jsonResponse({}))],
+  ])("retries csrf after a %s instead of caching rejection", async (_label, firstAttempt) => {
+    vi.mocked(fetch)
+      .mockImplementationOnce(firstAttempt)
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "fresh-csrf" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+
+    await expect(api("/api/tasks", { method: "POST", body: { title: "一" } })).rejects.toThrow()
+    await expect(api("/api/tasks", { method: "POST", body: { title: "二" } })).resolves.toEqual({ ok: true })
+
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === "/api/auth/csrf")).toHaveLength(2)
+    expect(fetch).toHaveBeenLastCalledWith("/api/tasks", expect.objectContaining({
+      headers: expect.objectContaining({ "X-CSRF-TOKEN": "fresh-csrf" }),
+    }))
+  })
+
+  it("surfaces csrf endpoint 401 and emits one unauthorized event without writing", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ message: "会话已过期" }, 401))
+    const listener = vi.fn()
+    window.addEventListener("auth:unauthorized", listener)
+
+    const error = await api("/api/tasks", { method: "POST", body: { title: "任务" } })
+      .catch((reason: unknown) => reason)
+    window.removeEventListener("auth:unauthorized", listener)
+
+    expect(error).toMatchObject({ status: 401, message: "会话已过期" })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledWith("/api/auth/csrf", expect.objectContaining({ credentials: "include" }))
+  })
 })

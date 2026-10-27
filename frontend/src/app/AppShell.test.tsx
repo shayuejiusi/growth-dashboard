@@ -69,7 +69,7 @@ describe("应用外壳权限导航", () => {
     expect(screen.getByRole("menuitem", { name: "退出登录" })).toBeInTheDocument()
   })
 
-  it("移动导航隐藏时不可聚焦，并支持展开状态与 Escape 关闭", async () => {
+  it("移动导航打开聚焦关闭按钮，导航内 Escape 后恢复触发器焦点", async () => {
     const user = userEvent.setup()
     renderShell(3)
     const trigger = screen.getByRole("button", { name: "打开导航菜单" })
@@ -80,8 +80,30 @@ describe("应用外壳权限导航", () => {
     await user.click(trigger)
     expect(trigger).toHaveAttribute("aria-expanded", "true")
     expect(sidebar).not.toHaveClass("invisible")
+    expect(screen.getByRole("button", { name: "关闭导航菜单" })).toHaveFocus()
+
+    const taskLink = screen.getByRole("link", { name: "任务管理" })
+    taskLink.focus()
+    expect(taskLink).toHaveFocus()
     await user.keyboard("{Escape}")
     expect(trigger).toHaveAttribute("aria-expanded", "false")
+    expect(trigger).toHaveFocus()
+    expect(sidebar).toHaveClass("invisible")
+  })
+
+  it("移动导航关闭按钮和导航跳转都不会把焦点留在隐藏侧栏", async () => {
+    const user = userEvent.setup()
+    renderShell(3)
+    const trigger = screen.getByRole("button", { name: "打开导航菜单" })
+
+    await user.click(trigger)
+    await user.click(screen.getByRole("button", { name: "关闭导航菜单" }))
+    expect(trigger).toHaveFocus()
+
+    await user.click(trigger)
+    await user.click(screen.getByRole("link", { name: "提醒事项" }))
+    expect(trigger).toHaveAttribute("aria-expanded", "false")
+    expect(trigger).toHaveFocus()
   })
 
   it("切换并持久化主题和侧栏折叠状态", async () => {

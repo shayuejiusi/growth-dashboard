@@ -18,7 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router"
 import { toast } from "sonner"
 
@@ -60,6 +60,9 @@ export function AppShell() {
   const { data: user, isPending, isError, refetch } = useSession()
   const { theme, sidebarCollapsed, toggleTheme, toggleSidebar } = useUiStore()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null)
+  const mobileCloseRef = useRef<HTMLButtonElement>(null)
+  const wasMobileOpen = useRef(false)
   const logout = useLogout()
   const navigate = useNavigate()
 
@@ -68,7 +71,16 @@ export function AppShell() {
   }, [theme])
 
   useEffect(() => {
-    if (!mobileOpen) return
+    if (!mobileOpen) {
+      if (wasMobileOpen.current) {
+        mobileTriggerRef.current?.focus()
+        wasMobileOpen.current = false
+      }
+      return
+    }
+
+    wasMobileOpen.current = true
+    mobileCloseRef.current?.focus()
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") setMobileOpen(false)
     }
@@ -112,7 +124,7 @@ export function AppShell() {
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground" aria-hidden="true">墨</span>
             <span className={cn("font-semibold tracking-tight", sidebarCollapsed && "md:hidden")}>个人工作看板</span>
           </div>
-          <Button variant="ghost" size="icon" className="ml-auto md:hidden" aria-label="关闭导航菜单" onClick={() => setMobileOpen(false)}>
+          <Button ref={mobileCloseRef} variant="ghost" size="icon" className="ml-auto md:hidden" aria-label="关闭导航菜单" onClick={() => setMobileOpen(false)}>
             <X aria-hidden="true" />
           </Button>
         </div>
@@ -150,7 +162,7 @@ export function AppShell() {
 
       <div className={cn("min-h-screen transition-[margin] duration-200", sidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur sm:px-6">
-          <Button variant="ghost" size="icon" className="md:hidden" aria-label="打开导航菜单" aria-controls="primary-navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
+          <Button ref={mobileTriggerRef} variant="ghost" size="icon" className="md:hidden" aria-label="打开导航菜单" aria-controls="primary-navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
             <Menu aria-hidden="true" />
           </Button>
           <div className="hidden min-w-0 sm:block">
