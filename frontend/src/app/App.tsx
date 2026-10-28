@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { lazy, Suspense, useEffect } from "react"
+import { lazy, useEffect } from "react"
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router"
 
 import { StatePanel } from "@/components/feedback/StatePanel"
@@ -52,28 +52,26 @@ function AppRoutes() {
   return (
     <>
       <UnauthorizedBoundary />
-      <Suspense fallback={<StatePanel status="loading" className="min-h-screen" />}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route element={<RequireAuth />}>
-            <Route element={<AppShell />}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
-              <Route path="/reminders" element={<RemindersPage />} />
-              <Route element={<RequireRole maxLevel={2} />}>
-                <Route path="/content" element={<ContentPage />} />
-              </Route>
-              <Route element={<RequireRole maxLevel={1} />}>
-                <Route path="/admin/users" element={<UsersPage />} />
-                <Route path="/review" element={<ReviewPage />} />
-                <Route path="/talent" element={<TalentPage />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireAuth />}>
+          <Route element={<AppShell />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/reminders" element={<RemindersPage />} />
+            <Route element={<RequireRole maxLevel={2} />}>
+              <Route path="/content" element={<ContentPage />} />
             </Route>
+            <Route element={<RequireRole maxLevel={1} />}>
+              <Route path="/admin/users" element={<UsersPage />} />
+              <Route path="/review" element={<ReviewPage />} />
+              <Route path="/talent" element={<TalentPage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
-        </Routes>
-      </Suspense>
+        </Route>
+      </Routes>
     </>
   )
 }

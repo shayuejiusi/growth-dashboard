@@ -188,7 +188,7 @@ describe("全局搜索", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/tasks?focus=task-1")
   })
 
-  it("点击结果关闭并导航，level 3 响应只呈现任务分组", async () => {
+  it("空的人员和内容分组不渲染，点击结果关闭并导航", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ ...emptyResults, tasks: [taskResult] })))
     const user = userEvent.setup()
     renderSearch()
@@ -203,6 +203,77 @@ describe("全局搜索", () => {
     await user.click(result)
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     expect(screen.getByTestId("location")).toHaveTextContent("/tasks?focus=task-1")
+  })
+
+  it.each([
+    ["外链", "https://example.com/tasks?focus=task-1"],
+    ["协议相对外链", "//example.com/tasks?focus=task-1"],
+    ["错误内部路径", "/admin/users?focus=task-1"],
+  ])("拒绝%s并保留搜索面板", async (_label, path) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      ...emptyResults,
+      tasks: [{ ...taskResult, path }],
+    })))
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(searchInput(), "德")
+    await user.click(await screen.findByRole("option", { name: /德育工作计划/ }))
+
+    expect(screen.getByRole("dialog", { name: "全局搜索" })).toBeInTheDocument()
+    expect(screen.getByRole("alert")).toHaveTextContent("无法打开该搜索结果")
+    expect(screen.getByTestId("location")).toHaveTextContent("/dashboard")
+  })
+
+  it("composing Enter 不跳转且不阻止输入法默认行为", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ ...emptyResults, tasks: [taskResult] })))
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(searchInput(), "德")
+    await screen.findByRole("option", { name: /德育工作计划/ })
+    await user.keyboard("{ArrowDown}")
+    const notPrevented = fireEvent.keyDown(searchInput(), { key: "Enter", keyCode: 229, isComposing: true })
+
+    expect(notPrevented).toBe(true)
+    expect(screen.getByRole("dialog", { name: "全局搜索" })).toBeInTheDocument()
+    expect(screen.getByTestId("location")).toHaveTextContent("/dashboard")
+  })
+
+  it("composing 方向键不改变选项且不阻止输入法默认行为", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      ...emptyResults,
+      tasks: [taskResult, { ...taskResult, id: "task-2", title: "第二项任务" }],
+    })))
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(searchInput(), "德")
+    const options = await screen.findAllByRole("option")
+    await user.keyboard("{ArrowDown}")
+    expect(options[0]).toHaveAttribute("aria-selected", "true")
+    const downNotPrevented = fireEvent.keyDown(searchInput(), { key: "ArrowDown", keyCode: 229, isComposing: true })
+    const upNotPrevented = fireEvent.keyDown(searchInput(), { key: "ArrowUp", keyCode: 229, isComposing: true })
+
+    expect(downNotPrevented).toBe(true)
+    expect(upNotPrevented).toBe(true)
+    expect(options[0]).toHaveAttribute("aria-selected", "true")
+    expect(options[1]).toHaveAttribute("aria-selected", "false")
+  })
+
+  it("combobox 仅在列表存在时关联 controls，分组和 options 遵循 active-descendant 模型", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ ...emptyResults, tasks: [taskResult] })))
+    const user = userEvent.setup()
+    renderSearch()
+
+    expect(searchInput()).not.toHaveAttribute("aria-controls")
+    await user.type(searchInput(), "德")
+    const option = await screen.findByRole("option", { name: /德育工作计划/ })
+
+    expect(searchInput()).toHaveAttribute("aria-controls", "global-search-results")
+    expect(screen.getByRole("group", { name: "任务" })).toBeInTheDocument()
+    expect(option).toHaveAttribute("tabindex", "-1")
+    expect(searchInput()).toHaveFocus()
   })
 
   it("Escape 关闭搜索面板", async () => {

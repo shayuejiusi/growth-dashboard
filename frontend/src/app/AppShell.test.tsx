@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MemoryRouter } from "react-router"
-import { beforeEach, describe, expect, it } from "vitest"
+import { lazy } from "react"
+import { MemoryRouter, Route, Routes } from "react-router"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { sessionQueryKey, type SessionUser } from "@/features/auth/use-session"
 import { useUiStore } from "@/stores/ui-store"
@@ -33,6 +34,10 @@ describe("应用外壳权限导航", () => {
     localStorage.clear()
     useUiStore.setState({ theme: "light", sidebarCollapsed: false })
     document.documentElement.classList.remove("dark")
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it("level 3 只显示驾驶舱、任务和提醒，并隐藏能力与高权限入口", () => {
@@ -133,6 +138,51 @@ describe("应用外壳权限导航", () => {
     expect(navigationTrigger).toHaveAttribute("aria-expanded", "false")
     expect(screen.getByRole("dialog", { name: "全局搜索" })).toBeInTheDocument()
     expect(screen.getByRole("complementary", { name: "主导航", hidden: true })).toHaveClass("invisible")
+  })
+
+  it("选择结果后再次打开，Escape 仍恢复搜索按钮焦点", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      tasks: [{ type: "task", id: "task-1", title: "德育工作计划", subtitle: "今天截止", path: "/tasks?focus=task-1" }],
+      people: [],
+      content: [],
+    }), { headers: { "Content-Type": "application/json" } })))
+    const user = userEvent.setup()
+    renderShell(3)
+    const trigger = screen.getByRole("button", { name: "搜索" })
+
+    await user.click(trigger)
+    await user.type(screen.getByRole("combobox", { name: "全局搜索" }), "德")
+    await user.click(await screen.findByRole("option", { name: /德育工作计划/ }))
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+
+    await user.click(trigger)
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  it("页面 chunk 延迟时仅在主内容显示 fallback，认证外壳保持可见", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    queryClient.setQueryData(sessionQueryKey, users[3])
+    const PendingPage = lazy(() => new Promise<{ default: () => null }>(() => undefined))
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/dashboard" element={<PendingPage />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByRole("banner")).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "主导航" })).toBeInTheDocument()
+    expect(within(screen.getByRole("main")).getByRole("status")).toHaveTextContent("正在加载")
   })
 
   it("切换并持久化主题和侧栏折叠状态", async () => {

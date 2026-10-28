@@ -21,10 +21,21 @@ interface SearchDialogProps {
   returnFocusRef?: RefObject<HTMLButtonElement | null>
 }
 
-const resultTypes: Record<SearchResult["type"], { label: string; icon: LucideIcon }> = {
-  task: { label: "任务", icon: SquareCheckBig },
-  person: { label: "人员", icon: UserRound },
-  content: { label: "内容", icon: FileText },
+const resultTypes: Record<SearchResult["type"], { label: string; icon: LucideIcon; path: string }> = {
+  task: { label: "任务", icon: SquareCheckBig, path: "/tasks" },
+  person: { label: "人员", icon: UserRound, path: "/talent" },
+  content: { label: "内容", icon: FileText, path: "/content" },
+}
+
+function safeResultPath(result: SearchResult) {
+  if (typeof result.path !== "string" || !result.path.startsWith("/") || result.path.startsWith("//")) return null
+  try {
+    const url = new URL(result.path, window.location.origin)
+    if (url.origin !== window.location.origin || url.pathname !== resultTypes[result.type].path) return null
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return null
+  }
 }
 
 export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialogProps) {
@@ -32,11 +43,15 @@ export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialo
   const shouldReturnFocus = useRef(true)
   const [query, setQuery] = useState("")
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [navigationError, setNavigationError] = useState<string | null>(null)
   const { trimmedQuery, validationMessage, isDebouncing, searchQuery } = useGlobalSearch(open, query)
   const [previousData, setPreviousData] = useState(searchQuery.data)
   const results = searchQuery.data
     ? [...searchQuery.data.tasks, ...searchQuery.data.people, ...searchQuery.data.content]
     : []
+  const showResultList = Boolean(
+    trimmedQuery && !validationMessage && !isDebouncing && !searchQuery.isLoading && !searchQuery.isError && results.length > 0,
+  )
 
   if (previousData !== searchQuery.data) {
     setPreviousData(searchQuery.data)
@@ -44,26 +59,37 @@ export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialo
   }
 
   useEffect(() => {
+    if (open) shouldReturnFocus.current = true
+  }, [open])
+
+  useEffect(() => {
     if (activeIndex < 0) return
     document.getElementById(`global-search-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" })
   }, [activeIndex])
 
   function handleOpenChange(nextOpen: boolean) {
-    if (nextOpen) shouldReturnFocus.current = true
     if (!nextOpen) {
       setQuery("")
       setActiveIndex(-1)
+      setNavigationError(null)
     }
     onOpenChange(nextOpen)
   }
 
   function selectResult(result: SearchResult) {
+    const path = safeResultPath(result)
+    if (!path) {
+      setNavigationError("无法打开该搜索结果：链接地址无效或不在允许范围内。")
+      return
+    }
+    setNavigationError(null)
     shouldReturnFocus.current = false
     handleOpenChange(false)
-    navigate(result.path)
+    navigate(path)
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
     if (!results.length) return
     if (event.key === "ArrowDown") {
       event.preventDefault()
@@ -110,12 +136,13 @@ export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialo
             aria-label="全局搜索"
             aria-autocomplete="list"
             aria-expanded={open}
-            aria-controls="global-search-results"
-            aria-activedescendant={activeIndex >= 0 ? `global-search-option-${activeIndex}` : undefined}
+            aria-controls={showResultList ? "global-search-results" : undefined}
+            aria-activedescendant={showResultList && activeIndex >= 0 ? `global-search-option-${activeIndex}` : undefined}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value)
               setActiveIndex(-1)
+              setNavigationError(null)
             }}
             onKeyDown={handleKeyDown}
             placeholder="输入关键词"
@@ -123,6 +150,7 @@ export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialo
           />
         </div>
         <div className="min-h-48 overflow-y-auto p-2">
+          {navigationError ? <p role="alert" className="px-3 py-2 text-sm text-destructive">{navigationError}</p> : null}
           {validationMessage ? (
             <p role="alert" className="p-6 text-center text-sm text-muted-foreground">{validationMessage}</p>
           ) : !trimmedQuery ? (
@@ -153,8 +181,8 @@ export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialo
                 if (!group.items.length) return null
                 const offset = groups.slice(0, groupIndex).reduce((total, item) => total + item.items.length, 0)
                 return (
-                  <section key={group.key} aria-label={group.label}>
-                    <h2 className="px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">{group.label}</h2>
+                  <section key={group.key} role="group" aria-labelledby={`global-search-group-${group.key}`}>
+                    <h2 id={`global-search-group-${group.key}`} className="px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">{group.label}</h2>
                     {group.items.map((result, itemIndex) => {
                       const index = offset + itemIndex
                       const Icon = resultTypes[result.type].icon
@@ -165,6 +193,7 @@ export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialo
                           id={`global-search-option-${index}`}
                           type="button"
                           role="option"
+                          tabIndex={-1}
                           aria-selected={active}
                           className={cn(
                             "flex w-full min-w-0 items-start gap-3 rounded-md px-3 py-3 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",

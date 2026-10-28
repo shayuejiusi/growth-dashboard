@@ -18,7 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router"
 import { toast } from "sonner"
 
@@ -229,7 +229,9 @@ export function AppShell() {
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          <Suspense fallback={<StatePanel status="loading" />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} returnFocusRef={searchTriggerRef} />

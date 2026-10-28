@@ -73,3 +73,36 @@ E2E 覆盖：7 个主要页面在 390×844 与 1440×900 的长文本/无页面�
 - 断点仅实测 390×844、768×1024、1440×900；其他宽度、旋转、缩放和屏幕阅读器人工遍历未验证。
 - 深色对比自动断言针对 body 前景/背景；未逐组件测量全部文本、禁用态和图表颜色。
 - 构建仍有上述主包体积和第三方注释警告；本次未做进一步 vendor/manualChunks 优化。
+
+---
+
+## 独立复核发现修复（基线 `409713c28ff8fb933f7c337ef4e099e61f2b60f1`）
+
+### 修复内容
+
+1. 每次 `open` 变为 true 都恢复焦点回退策略；覆盖“选择结果→再次打开→Escape→搜索按钮聚焦”。
+2. 不再直接导航服务端 `result.path`：task/person/content 分别仅允许 `/tasks`、`/talent`、`/content`，要求同源、单前导 `/`，仅保留合法 query/hash；外链、`//host` 和错误内部路径均在 Dialog 内显示可理解错误且不导航。
+3. ArrowUp/ArrowDown/Enter 处理前跳过 `nativeEvent.isComposing` 和 `keyCode === 229`，不跳转、不改选项且不 `preventDefault`。
+4. Suspense 从整个 Routes 移至 AppShell 的 Outlet 周围；延迟 chunk 时侧栏、头部和认证外壳保持可见，仅主内容显示 StatePanel。
+5. Combobox 仅在实际列表存在时设置 `aria-controls`/`aria-activedescendant`；分组使用 `role="group"` + `aria-labelledby`，options 使用 `tabIndex={-1}`，焦点保持在输入框。
+6. 原“level 3 响应”测试改名为“空的人员和内容分组不渲染”；真实 level 3 权限仍由 AppShell 集成测试验证，不再夸大搜索测试覆盖范围。
+
+### 复核真实 RED → GREEN
+
+- 旧实现先运行 `npm test -- SearchDialog.test.tsx`：13 项中新增 6 项失败，覆盖三类非法路径、composing Enter、composing 方向键和 ARIA；外链还真实触发 React Router `External navigation is not allowed` 未处理错误。
+- 旧实现先运行 `npm test -- AppShell.test.tsx`：10 项中新增 2 项失败；再次打开后 Escape 焦点落在 body，pending lazy 页面导致 banner 不渲染。
+- 修复后聚焦验证：`SearchDialog.test.tsx` 13/13、`AppShell.test.tsx` 10/10；三类非法路径、两项 composing 和再次打开焦点均分别单独重跑通过。
+
+### 复核最终验证
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm test` | PASS，18 files / 202 tests |
+| `npm run lint` | PASS，0 errors / 0 warnings |
+| `PLAYWRIGHT_CHANNEL=msedge npm run test:e2e -- responsive.spec.ts` | PASS，真实 Windows 系统 Edge 5/5 |
+| `npm run build` | PASS；主包 509.35 kB，gzip 162.30 kB；CSS 46.27 kB，gzip 8.86 kB |
+| `git diff --check` | PASS，仅有 LF→CRLF 提示 |
+
+复核后自审已逐项确认焦点策略、路径白名单、IME 短路、ARIA 关联及 Outlet 局部 Suspense；未留下生产调试日志或临时开发服务器。
+
+未验证边界不变：默认 Playwright Chromium 未运行，E2E 仍使用 mock API 和 Windows Edge；未验证 Firefox、WebKit、真实移动设备及真实后端。主包仍略高于 500 kB，保留 Vite 警告，第三方 zod 注释提示仍为非阻断警告。
