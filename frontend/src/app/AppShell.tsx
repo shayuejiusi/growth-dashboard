@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLogout, useSession } from "@/features/auth/use-session"
+import { SearchDialog } from "@/features/search/SearchDialog"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/stores/ui-store"
 
@@ -60,8 +61,10 @@ export function AppShell() {
   const { data: user, isPending, isError, refetch } = useSession()
   const { theme, sidebarCollapsed, toggleTheme, toggleSidebar } = useUiStore()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const mobileTriggerRef = useRef<HTMLButtonElement>(null)
   const mobileCloseRef = useRef<HTMLButtonElement>(null)
+  const searchTriggerRef = useRef<HTMLButtonElement>(null)
   const wasMobileOpen = useRef(false)
   const logout = useLogout()
   const navigate = useNavigate()
@@ -80,13 +83,28 @@ export function AppShell() {
     }
 
     wasMobileOpen.current = true
-    mobileCloseRef.current?.focus()
+    const focusTimer = window.setTimeout(() => mobileCloseRef.current?.focus(), 200)
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") setMobileOpen(false)
     }
     document.addEventListener("keydown", closeOnEscape)
-    return () => document.removeEventListener("keydown", closeOnEscape)
+    return () => {
+      window.clearTimeout(focusTimer)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
   }, [mobileOpen])
+
+  useEffect(() => {
+    function openOnShortcut(event: KeyboardEvent) {
+      if (user && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault()
+        setMobileOpen(false)
+        setSearchOpen(true)
+      }
+    }
+    document.addEventListener("keydown", openOnShortcut)
+    return () => document.removeEventListener("keydown", openOnShortcut)
+  }, [user])
 
   if (isPending) return <StatePanel status="loading" className="min-h-screen" />
   if (isError) return <StatePanel status="error" className="min-h-screen" onRetry={() => void refetch()} />
@@ -114,15 +132,15 @@ export function AppShell() {
         id="primary-navigation"
         aria-label="主导航"
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r bg-card transition-[width,transform] duration-200 md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r bg-card transition-[width,transform] duration-200 md:translate-x-0 xl:w-60",
           mobileOpen ? "visible translate-x-0" : "invisible md:visible",
           sidebarCollapsed ? "md:w-20" : "md:w-64",
         )}
       >
-        <div className={cn("flex h-16 shrink-0 items-center border-b px-5", sidebarCollapsed && "md:justify-center md:px-2")}>
+        <div className={cn("flex h-16 shrink-0 items-center border-b px-5 xl:justify-start xl:px-5", sidebarCollapsed && "md:justify-center md:px-2")}>
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground" aria-hidden="true">墨</span>
-            <span className={cn("font-semibold tracking-tight", sidebarCollapsed && "md:hidden")}>个人工作看板</span>
+            <span className={cn("font-semibold tracking-tight xl:inline", sidebarCollapsed && "md:hidden")}>个人工作看板</span>
           </div>
           <Button ref={mobileCloseRef} variant="ghost" size="icon" className="ml-auto md:hidden" aria-label="关闭导航菜单" onClick={() => setMobileOpen(false)}>
             <X aria-hidden="true" />
@@ -137,17 +155,17 @@ export function AppShell() {
               onClick={() => setMobileOpen(false)}
               title={sidebarCollapsed ? item.label : undefined}
               className={({ isActive }) => cn(
-                "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+                "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground xl:justify-start xl:px-3",
                 isActive && "bg-primary/10 text-primary",
                 sidebarCollapsed && "md:justify-center md:px-2",
               )}
             >
               <item.icon className="size-5 shrink-0" aria-hidden="true" />
-              <span className={cn(sidebarCollapsed && "md:hidden")}>{item.label}</span>
+              <span className={cn("xl:inline", sidebarCollapsed && "md:hidden")}>{item.label}</span>
             </NavLink>
           ))}
         </nav>
-        <div className="border-t p-3">
+        <div className="border-t p-3 xl:hidden">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" className={cn("w-full justify-start gap-3", sidebarCollapsed && "md:justify-center md:px-2")} aria-label={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"} onClick={toggleSidebar}>
@@ -160,7 +178,7 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className={cn("min-h-screen transition-[margin] duration-200", sidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
+      <div className={cn("min-h-screen transition-[margin] duration-200 xl:ml-60", sidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur sm:px-6">
           <Button ref={mobileTriggerRef} variant="ghost" size="icon" className="md:hidden" aria-label="打开导航菜单" aria-controls="primary-navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
             <Menu aria-hidden="true" />
@@ -172,7 +190,7 @@ export function AppShell() {
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="搜索" onClick={() => toast.info("搜索面板将在后续阶段开放")}>
+                <Button ref={searchTriggerRef} variant="ghost" size="icon" aria-label="搜索" aria-keyshortcuts="Control+K Meta+K" onClick={() => setSearchOpen(true)}>
                   <Search aria-hidden="true" />
                 </Button>
               </TooltipTrigger>
@@ -214,6 +232,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} returnFocusRef={searchTriggerRef} />
     </div>
   )
 }

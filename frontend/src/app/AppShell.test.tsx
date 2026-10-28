@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, within } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { beforeEach, describe, expect, it } from "vitest"
@@ -80,7 +80,7 @@ describe("应用外壳权限导航", () => {
     await user.click(trigger)
     expect(trigger).toHaveAttribute("aria-expanded", "true")
     expect(sidebar).not.toHaveClass("invisible")
-    expect(screen.getByRole("button", { name: "关闭导航菜单" })).toHaveFocus()
+    await waitFor(() => expect(screen.getByRole("button", { name: "关闭导航菜单" })).toHaveFocus())
 
     const taskLink = screen.getByRole("link", { name: "任务管理" })
     taskLink.focus()
@@ -104,6 +104,35 @@ describe("应用外壳权限导航", () => {
     await user.click(screen.getByRole("link", { name: "提醒事项" }))
     expect(trigger).toHaveAttribute("aria-expanded", "false")
     expect(trigger).toHaveFocus()
+  })
+
+  it("Ctrl/Cmd+K 打开搜索，Escape 关闭并恢复搜索按钮焦点", async () => {
+    const user = userEvent.setup()
+    renderShell(3)
+    const trigger = screen.getByRole("button", { name: "搜索" })
+
+    await user.keyboard("{Control>}k{/Control}")
+    expect(screen.getByRole("dialog", { name: "全局搜索" })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "全局搜索" })).toHaveFocus()
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("dialog", { name: "全局搜索" })).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+
+    await user.keyboard("{Meta>}k{/Meta}")
+    expect(screen.getByRole("dialog", { name: "全局搜索" })).toBeInTheDocument()
+  })
+
+  it("搜索与移动导航互斥，快捷键不会在 Drawer 上叠加 Dialog", async () => {
+    const user = userEvent.setup()
+    renderShell(3)
+    const navigationTrigger = screen.getByRole("button", { name: "打开导航菜单" })
+
+    await user.click(navigationTrigger)
+    expect(navigationTrigger).toHaveAttribute("aria-expanded", "true")
+    await user.keyboard("{Control>}k{/Control}")
+    expect(navigationTrigger).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("dialog", { name: "全局搜索" })).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "主导航", hidden: true })).toHaveClass("invisible")
   })
 
   it("切换并持久化主题和侧栏折叠状态", async () => {

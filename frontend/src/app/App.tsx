@@ -1,20 +1,21 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { useEffect } from "react"
+import { lazy, Suspense, useEffect } from "react"
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router"
 
 import { StatePanel } from "@/components/feedback/StatePanel"
-import { UsersPage } from "@/features/admin/UsersPage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { sessionQueryKey, useSession } from "@/features/auth/use-session"
-import { ContentPage } from "@/features/content/ContentPage"
-import { DashboardPage } from "@/features/dashboard/DashboardPage"
-import { RemindersPage } from "@/features/reminders/RemindersPage"
-import { ReviewPage } from "@/features/review/ReviewPage"
-import { TalentPage } from "@/features/talent/TalentPage"
-import { TasksPage } from "@/features/tasks/TasksPage"
 import { AppShell } from "./AppShell"
 import { Providers } from "./providers"
 import { RequireRole } from "./RequireRole"
+
+const UsersPage = lazy(() => import("@/features/admin/UsersPage").then((module) => ({ default: module.UsersPage })))
+const ContentPage = lazy(() => import("@/features/content/ContentPage").then((module) => ({ default: module.ContentPage })))
+const DashboardPage = lazy(() => import("@/features/dashboard/DashboardPage").then((module) => ({ default: module.DashboardPage })))
+const RemindersPage = lazy(() => import("@/features/reminders/RemindersPage").then((module) => ({ default: module.RemindersPage })))
+const ReviewPage = lazy(() => import("@/features/review/ReviewPage").then((module) => ({ default: module.ReviewPage })))
+const TalentPage = lazy(() => import("@/features/talent/TalentPage").then((module) => ({ default: module.TalentPage })))
+const TasksPage = lazy(() => import("@/features/tasks/TasksPage").then((module) => ({ default: module.TasksPage })))
 
 function UnauthorizedBoundary() {
   const queryClient = useQueryClient()
@@ -51,26 +52,28 @@ function AppRoutes() {
   return (
     <>
       <UnauthorizedBoundary />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<RequireAuth />}>
-          <Route element={<AppShell />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/tasks" element={<TasksPage />} />
-            <Route path="/reminders" element={<RemindersPage />} />
-            <Route element={<RequireRole maxLevel={2} />}>
-              <Route path="/content" element={<ContentPage />} />
+      <Suspense fallback={<StatePanel status="loading" className="min-h-screen" />}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<AppShell />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/reminders" element={<RemindersPage />} />
+              <Route element={<RequireRole maxLevel={2} />}>
+                <Route path="/content" element={<ContentPage />} />
+              </Route>
+              <Route element={<RequireRole maxLevel={1} />}>
+                <Route path="/admin/users" element={<UsersPage />} />
+                <Route path="/review" element={<ReviewPage />} />
+                <Route path="/talent" element={<TalentPage />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
-            <Route element={<RequireRole maxLevel={1} />}>
-              <Route path="/admin/users" element={<UsersPage />} />
-              <Route path="/review" element={<ReviewPage />} />
-              <Route path="/talent" element={<TalentPage />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
-        </Route>
-      </Routes>
+        </Routes>
+      </Suspense>
     </>
   )
 }
