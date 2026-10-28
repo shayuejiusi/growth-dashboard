@@ -42,6 +42,20 @@ describe("API client", () => {
     )
   })
 
+  it("sends FormData unchanged without manually setting Content-Type", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-file" }))
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ text: "正文" }))
+    const body = new FormData()
+    body.append("file", new File(["正文"], "notes.txt"))
+
+    await api("/api/ai/extract-text", { method: "POST", body })
+
+    expect(fetch).toHaveBeenLastCalledWith("/api/ai/extract-text", expect.objectContaining({
+      body,
+      headers: { Accept: "application/json", "X-CSRF-TOKEN": "csrf-file" },
+    }))
+  })
+
   it("uses cookies on reads without requesting a csrf token", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ id: "t1" }))
 

@@ -50,7 +50,8 @@ async function csrfToken(): Promise<string> {
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const method = options.method ?? "GET"
   const headers: Record<string, string> = { Accept: "application/json" }
-  if (options.body !== undefined) headers["Content-Type"] = "application/json"
+  const isFormData = options.body instanceof FormData
+  if (options.body !== undefined && !isFormData) headers["Content-Type"] = "application/json"
   if (method !== "GET" && !options.skipCsrf) {
     headers["X-CSRF-TOKEN"] = await csrfToken()
   }
@@ -60,7 +61,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
     headers,
     credentials: "include",
     signal: options.signal,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : options.body instanceof FormData ? options.body : JSON.stringify(options.body),
   })
   if (response.status === 401 && !options.skipUnauthorizedEvent) emitUnauthorized()
   return parseApiResponse<T>(response, path)

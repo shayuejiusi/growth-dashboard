@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { TaskDraft } from "./ai-api"
 import { ClearTasksDialog } from "./ClearTasksDialog"
 import { QuickAddDrawer } from "./QuickAddDrawer"
 import { TaskFormDrawer } from "./TaskFormDrawer"
@@ -199,6 +200,38 @@ export function TasksPage() {
     onError: (error) => toast.error(error instanceof Error ? error.message : "清空失败，请重试。"),
   })
 
+  const importMutation = useMutation({
+    mutationFn: async (drafts: TaskDraft[]) => {
+      let imported = 0
+      for (const draft of drafts) {
+        await createTask({
+          title: draft.title,
+          priority: draft.priority,
+          dueDate: draft.dueDate,
+          needReport: draft.needReport,
+          note: null,
+          category: null,
+          source: "文档导入（本地简单规则）",
+          nextStep: null,
+          expectedOutcome: null,
+          blocker: null,
+          repeatType: "NONE",
+        })
+        imported += 1
+      }
+      return imported
+    },
+    onSuccess: async (imported) => {
+      setQuickAddOpen(false)
+      toast.success(`已导入 ${imported} 项任务`)
+      await invalidateTaskData()
+    },
+    onError: async () => {
+      // 若批量导入中途失败，也重新拉取，确保已创建的部分不会从视图中消失。
+      await invalidateTaskData()
+    },
+  })
+
   const backupMutation = useMutation({
     mutationFn: async () => {
       const blob = await exportTasks()
@@ -301,7 +334,13 @@ export function TasksPage() {
       ) : null}
 
       <TaskFormDrawer open={formOpen} task={editingTask} writePending={isSaving} onOpenChange={setFormOpen} onSubmit={submitTask} />
-      <QuickAddDrawer open={quickAddOpen} writePending={isSaving} onOpenChange={setQuickAddOpen} onSubmit={async (input) => { await runTaskWrite(() => saveMutation.mutateAsync({ input })) }} />
+      <QuickAddDrawer
+        open={quickAddOpen}
+        writePending={isSaving}
+        onOpenChange={setQuickAddOpen}
+        onSubmit={async (input) => { await runTaskWrite(() => saveMutation.mutateAsync({ input })) }}
+        onImport={async (drafts) => { await runTaskWrite(() => importMutation.mutateAsync(drafts)) }}
+      />
       <ClearTasksDialog open={clearOpen} onOpenChange={setClearOpen} onConfirm={() => { void runTaskWrite(() => clearMutation.mutateAsync()).catch(() => undefined) }} />
       <ConfirmDialog
         open={deletingTask !== null}

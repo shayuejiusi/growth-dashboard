@@ -6,6 +6,7 @@ import { StatePanel } from "@/components/feedback/StatePanel"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { sessionQueryKey, useSession } from "@/features/auth/use-session"
+import { ContentPage } from "@/features/content/ContentPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { RemindersPage } from "@/features/reminders/RemindersPage"
 import { TasksPage } from "@/features/tasks/TasksPage"
@@ -74,7 +75,7 @@ function AppRoutes() {
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/reminders" element={<RemindersPage />} />
             <Route element={<RequireRole maxLevel={2} />}>
-              <Route path="/content" element={<PageContent title="每日精选" description="浏览为你整理的精选内容。" />} />
+              <Route path="/content" element={<ContentPage />} />
             </Route>
             <Route element={<RequireRole maxLevel={1} />}>
               <Route path="/admin/users" element={<PageContent title="账号管理" description="管理账号与权限等级。" />} />
