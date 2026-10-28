@@ -138,3 +138,35 @@ E2E 覆盖登录、创建、编辑、完成、键盘排序、刷新顺序保持�
 - 本机仍无 `nginx`、`docker`，本轮没有执行或伪报 `nginx -t`、真实双站点 TLS 代理、DNS/证书和 gzip 网络验证；目标机必须替换 `192.0.2.10` 为实际前端出口 IP，并按手册复验受信链路与六字段 JSON。
 - 最终差异仅限 README、两个 Nginx 配置、部署契约、smoke、Playwright 配置、部署手册和本报告；未写真实凭据，未改其他工作区文件。
 - 回归结束后检查本项目 Java/Node/esbuild 残留进程及 5173/7100 监听；仅允许停止命令行明确属于本项目的测试进程，不触碰无关服务。
+
+
+## 9. 复核 Important / Minor 最小修复（2026-10-28）
+
+基线提交：`7560cab8eb25f54abc171dea07a3aa7df312b367`。本轮只修改两份 Nginx、部署契约、部署手册与本报告，未改业务代码或 Playwright 配置，不 push。
+
+### 9.1 RED / GREEN
+
+- RED：新增“同机仅一个默认 80 server”和“引号/反斜杠/异常 URI 与外部请求 ID 注入边界”两项契约后，共 12 项，原 10 项通过、新 2 项失败；实际分别观察到两个 `default_server` 和错误 JSON 插值 `$uri`。
+- 补充 API 分机安装仍拒绝未知 Host 的 catch-all 断言后，再次确认 11/12，仅该断言 RED。
+- GREEN：最终 12/12 通过。请求 ID map 的静态断言兼容字符类中等价的转义写法，安全字符与 1–128 长度边界均有合法/非法样例。
+
+### 9.2 修复内容
+
+1. `frontend-nginx.conf` 保留唯一的显式 `listen 80 default_server`，以 444 拒绝同机未知 Host；`api-nginx.conf` 保留 444 catch-all 但移除 `default_server`，因此同机不冲突，API 独立安装时该首个 server 仍可作为隐式默认入口。两个规范域名继续使用固定 HTTPS 301。
+2. 两份配置的精确 404 与代理 502/503/504 JSON 均将 `path` 固定为 `/api`，不再插值 `$uri` 或其他 URI 变量；六字段与 `application/json` 保持不变。
+3. API 仅透传完全匹配 `[A-Za-z0-9._:-]{1,128}` 的外部 X-Request-ID；空值、引号、反斜杠、空格、超长等非法值回退 `$request_id`。前端首跳仍只使用 Nginx 生成的 `$request_id`。
+4. 部署手册同步唯一默认 server、同机/分机 catch-all、固定网关 path 与请求 ID 白名单规则。
+
+### 9.3 验证结果
+
+| 验证 | 结果 |
+| --- | --- |
+| `node --test deploy/deployment-contract.test.mjs` | PASS，12/12 |
+| 真实 Jar `node deploy/smoke-test.mjs` | PASS |
+| `npm run lint` | PASS |
+| `npm test` | PASS，18 files / 212 tests |
+| `npm run build` | PASS；仅既有第三方注释和 chunk 体积非阻断警告 |
+| Maven `clean test` | PASS，24 tests，0 failure/error/skip |
+| Windows Edge E2E | 本轮未重跑；因无 Playwright 配置或前端行为关联，保留上一轮 7/7 记录，不记为本轮新验证 |
+
+本机仍无 `nginx`、`docker`，未执行或伪报 `nginx -t`、同机配置加载及真实代理解析验证。目标机必须同时安装两份配置、执行语法检查，并复验未知 Host、固定跳转、恶意 URI／请求 ID 下的 JSON 响应。

@@ -125,9 +125,46 @@ test("双跳转发只在受信前端边界保留公网元数据并串联请求 I
   for (const [config, domain] of [[frontend, "dashboard.example.com"], [api, "api.example.com"]]) {
     assert.match(config, new RegExp(`return 301 https://${domain.replaceAll(".", "\\.")}\\$request_uri;`))
     assert.doesNotMatch(config, /return\s+301[^\n]*\$host/)
-    assert.match(config, /listen\s+80\s+default_server;/)
-    assert.match(config, /return\s+444;/)
   }
+})
+
+test("两配置同机安装仅一个默认 80 server，未知 Host 仍被拒绝", () => {
+  const frontend = read("deploy/frontend-nginx.conf")
+  const api = read("deploy/api-nginx.conf")
+  const combined = `${frontend}\n${api}`
+  assert.equal(combined.match(/listen\s+80\s+default_server;/g)?.length, 1)
+  const catchAll = frontend.match(/server\s*\{(?<body>[\s\S]*?listen\s+80\s+default_server;[\s\S]*?)\n\}/)?.groups?.body ?? ""
+  assert.match(catchAll, /server_name\s+_;/)
+  assert.match(catchAll, /return\s+444;/)
+  assert.doesNotMatch(api, /listen\s+80\s+default_server;/)
+  assert.match(api, /server\s*\{\s*listen\s+80;\s*server_name\s+_;\s*return\s+444;\s*\}/)
+})
+
+test("引号、反斜杠与异常 URI 不会破坏网关六字段 JSON，外部请求 ID 受白名单限制", () => {
+  const hostileUris = ["/api/\"quoted\"", "/api/\\backslash", "/api/%22%5C%0D%0A"]
+  for (const path of ["deploy/frontend-nginx.conf", "deploy/api-nginx.conf"]) {
+    const config = read(path)
+    const blocks = [...config.matchAll(/location\s+(?:=\s+\/api\/?|@(?:bad_gateway|upstream_unavailable|gateway_timeout))\s*\{(?<body>[\s\S]*?)\n\s*\}/g)]
+    assert.equal(blocks.length, 5)
+    for (const hostileUri of hostileUris) {
+      for (const block of blocks) {
+        const body = block.groups?.body ?? ""
+        const status = Number(body.match(/return\s+(\d+)/)?.[1])
+        expectJsonError(body, status)
+        assert.match(body, /"path":"\/api"/, `${hostileUri} 不得改变固定网关 path`)
+        assert.doesNotMatch(body, /\$(?:uri|request_uri|document_uri|request_filename)/)
+      }
+    }
+  }
+
+  const api = read("deploy/api-nginx.conf")
+  const requestIdMap = api.match(/map\s+\$http_x_request_id\s+\$dashboard_request_id\s*\{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? ""
+  assert.match(requestIdMap, /"~\^\[A-Za-z0-9\\?\._:-\]\{1,128\}\$"\s+\$http_x_request_id;/)
+  assert.match(requestIdMap, /default\s+\$request_id;/)
+  assert.doesNotMatch(requestIdMap, /default\s+\$http_x_request_id;/)
+  const safeRequestId = /^[A-Za-z0-9._:-]{1,128}$/
+  for (const valid of ["req-123", "trace.id_123:abc", "x".repeat(128)]) assert.match(valid, safeRequestId)
+  for (const invalid of ["bad\"id", "bad\\id", "bad id", "", "x".repeat(129)]) assert.doesNotMatch(invalid, safeRequestId)
 })
 
 test("smoke 拒绝占用端口、处理 spawn/error/signal 并校验真实子进程 JSON", () => {
