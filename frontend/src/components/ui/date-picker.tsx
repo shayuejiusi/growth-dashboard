@@ -18,11 +18,18 @@ interface DatePickerProps extends Omit<ComponentProps<typeof Button>, "type" | "
 
 const weekDays = ["一", "二", "三", "四", "五", "六", "日"]
 
+function createDate(year: number, month: number, day: number) {
+  const date = new Date(0)
+  date.setFullYear(year, month, day)
+  date.setHours(12, 0, 0, 0)
+  return date
+}
+
 function parseDate(value: string): DateValue | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return null
   const date = { year: Number(match[1]), month: Number(match[2]) - 1, day: Number(match[3]) }
-  const nativeDate = new Date(date.year, date.month, date.day)
+  const nativeDate = createDate(date.year, date.month, date.day)
   return nativeDate.getFullYear() === date.year && nativeDate.getMonth() === date.month && nativeDate.getDate() === date.day ? date : null
 }
 
@@ -42,10 +49,12 @@ function DatePicker({ value, onChange, className, ...props }: DatePickerProps) {
   const [open, setOpen] = useState(false)
   const [month, setMonth] = useState(() => currentMonth(value))
   const selected = parseDate(value)
-  const firstDay = new Date(month.year, month.month, 1)
+  const firstDay = createDate(month.year, month.month, 1)
   const leadingDays = (firstDay.getDay() + 6) % 7
-  const dayCount = new Date(month.year, month.month + 1, 0).getDate()
+  const dayCount = createDate(month.year, month.month + 1, 0).getDate()
   const cells = Array.from({ length: Math.ceil((leadingDays + dayCount) / 7) * 7 }, (_, index) => index - leadingDays + 1)
+  const atMinimum = month.year === 0 && month.month === 0
+  const atMaximum = month.year === 9999 && month.month === 11
 
   function changeOpen(nextOpen: boolean) {
     setOpen(nextOpen)
@@ -54,7 +63,7 @@ function DatePicker({ value, onChange, className, ...props }: DatePickerProps) {
 
   function moveMonth(offset: number) {
     setMonth((current) => {
-      const date = new Date(current.year, current.month + offset, 1)
+      const date = createDate(current.year, current.month + offset, 1)
       return { year: date.getFullYear(), month: date.getMonth() }
     })
   }
@@ -79,11 +88,11 @@ function DatePicker({ value, onChange, className, ...props }: DatePickerProps) {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[19rem] p-3" aria-label="选择日期">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="上个月" onClick={() => moveMonth(-1)}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="上个月" disabled={atMinimum} onClick={() => moveMonth(-1)}>
             <ChevronLeft aria-hidden="true" />
           </Button>
           <h2 className="text-sm font-medium" aria-live="polite">{month.year}年{month.month + 1}月</h2>
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="下个月" onClick={() => moveMonth(1)}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="下个月" disabled={atMaximum} onClick={() => moveMonth(1)}>
             <ChevronRight aria-hidden="true" />
           </Button>
         </div>

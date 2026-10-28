@@ -43,4 +43,30 @@ describe("日期选择器", () => {
     expect(screen.getByLabelText("表单日期")).toHaveTextContent("")
     expect(screen.getByRole("button", { name: "截止日期" })).toHaveTextContent("选择日期")
   })
+
+  it.each([
+    { value: "0000-01-02", label: "0年1月2日", month: "0年1月", nextMonth: "0年2月" },
+    { value: "0099-12-31", label: "99年12月31日", month: "99年12月", nextMonth: "100年1月" },
+  ])("正确显示并浏览低年份日期 $value", async ({ value, label, month, nextMonth }) => {
+    const user = userEvent.setup()
+    render(<ControlledDatePicker initialValue={value} />)
+
+    expect(screen.getByRole("button", { name: "截止日期" })).toHaveTextContent(label)
+    await user.click(screen.getByRole("button", { name: "截止日期" }))
+    expect(screen.getByRole("heading", { name: month })).toBeVisible()
+    await user.click(screen.getByRole("button", { name: "下个月" }))
+    expect(screen.getByRole("heading", { name: nextMonth })).toBeVisible()
+  })
+
+  it("在支持的年份边界禁用越界翻月", async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<ControlledDatePicker initialValue="0000-01-02" />)
+    await user.click(screen.getByRole("button", { name: "截止日期" }))
+    expect(screen.getByRole("button", { name: "上个月" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "清除日期" }))
+
+    rerender(<ControlledDatePicker key="maximum" initialValue="9999-12-31" />)
+    await user.click(screen.getByRole("button", { name: "截止日期" }))
+    expect(screen.getByRole("button", { name: "下个月" })).toBeDisabled()
+  })
 })
