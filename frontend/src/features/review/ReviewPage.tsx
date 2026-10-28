@@ -10,16 +10,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { generateDailyReview, getDailyReview, reviewKeys } from "./review-api"
 import type { ReviewDraft } from "./types"
 
-const metricLabels: Record<string, string> = {
+const metricLabels = {
   total: "全部任务",
   open: "待办任务",
+  todayDue: "今日截止",
   overdue: "已逾期",
   highPriority: "高优先级",
-  todayDue: "今日截止",
+  needReport: "需要汇报",
   completedTotal: "累计完成",
   completionRate: "完成率",
-  needReport: "需要汇报",
-}
+  reportedCount: "汇报事项",
+} as const
 
 function ReviewList({ title, items, description }: { title: string; items: string[]; description: string }) {
   return (
@@ -38,7 +39,9 @@ function ReviewList({ title, items, description }: { title: string; items: strin
 }
 
 function ReviewContent({ review }: { review: ReviewDraft }) {
-  const metrics = Object.entries(review.metrics)
+  const metrics = Object.entries(metricLabels)
+    .map(([key, label]) => ({ key, label, value: review.metrics[key] }))
+    .filter(({ value }) => value !== undefined)
   return (
     <div className="space-y-6" aria-label={`${review.date} 复盘内容`}>
       <Card>
@@ -49,9 +52,9 @@ function ReviewContent({ review }: { review: ReviewDraft }) {
         <CardContent>
           {metrics.length ? (
             <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {metrics.map(([key, value]) => (
+              {metrics.map(({ key, label, value }) => (
                 <div key={key} className="rounded-lg bg-muted/60 p-3">
-                  <dt className="text-xs text-muted-foreground">{metricLabels[key] ?? key}</dt>
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
                   <dd className="mt-1 text-lg font-semibold">{value}{key === "completionRate" && typeof value === "number" ? "%" : ""}</dd>
                 </div>
               ))}
@@ -96,8 +99,12 @@ export function ReviewPage() {
     document.title = "工作复盘 · 个人工作看板"
   }, [])
 
+  const generateDisabled = generateMutation.isPending || reviewQuery.isPending
+
   function generate() {
-    if (!generateMutation.isPending) generateMutation.mutate()
+    if (generateDisabled) return
+    void queryClient.cancelQueries({ queryKey: reviewKeys.daily() })
+    generateMutation.mutate()
   }
 
   return (
@@ -107,7 +114,7 @@ export function ReviewPage() {
           <h1 id="review-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">工作复盘</h1>
           <p className="mt-2 text-sm text-muted-foreground">回顾今日工作，沉淀亮点、改进点与明日目标。</p>
         </div>
-        <Button disabled={generateMutation.isPending} aria-busy={generateMutation.isPending} onClick={generate}>
+        <Button disabled={generateDisabled} aria-busy={generateMutation.isPending} onClick={generate}>
           {generateMutation.isPending ? <RefreshCw className="animate-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
           {generateMutation.isPending ? "正在生成今日复盘" : "生成今日复盘"}
         </Button>

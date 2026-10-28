@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Trash2 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -78,6 +78,7 @@ function ManageRoster({ roster, board, onOpenChange }: RosterDrawerProps & { ros
   const [editingMember, setEditingMember] = useState<Member | null>(null)
   const [deletingMember, setDeletingMember] = useState<Member | null>(null)
   const [deletingRoster, setDeletingRoster] = useState(false)
+  const [addMemberDirty, setAddMemberDirty] = useState(false)
   const members = board.rosters[roster] ?? []
   const noteCount = (name: string) => board.people.filter((person) => person.roster === roster && person.name === name).length
   const rosterNotes = board.people.filter((person) => person.roster === roster).length
@@ -132,7 +133,7 @@ function ManageRoster({ roster, board, onOpenChange }: RosterDrawerProps & { ros
 
   return (
     <>
-      <FormDrawer open onOpenChange={onOpenChange} dirty={false} title={`管理名册：${roster}`} description={`${members.length} 名成员 · ${rosterNotes} 条观察记录`}>
+      <FormDrawer open onOpenChange={onOpenChange} dirty={addMemberDirty} title={`管理名册：${roster}`} description={`${members.length} 名成员 · ${rosterNotes} 条观察记录`}>
         <div className="space-y-6">
           <section aria-labelledby="roster-members-title" className="space-y-3">
             <h3 id="roster-members-title" className="font-medium">成员列表</h3>
@@ -154,6 +155,7 @@ function ManageRoster({ roster, board, onOpenChange }: RosterDrawerProps & { ros
           <AddMemberForm
             pending={addMutation.isPending || writePending}
             error={addMutation.isError ? addMutation.error : null}
+            onDirtyChange={setAddMemberDirty}
             onSubmit={async (input) => { await addMutation.mutateAsync(input) }}
           />
 
@@ -193,9 +195,11 @@ function ManageRoster({ roster, board, onOpenChange }: RosterDrawerProps & { ros
   )
 }
 
-function AddMemberForm({ onSubmit, pending, error }: { onSubmit: (input: MemberInput) => Promise<void>; pending: boolean; error: Error | null }) {
+function AddMemberForm({ onSubmit, onDirtyChange, pending, error }: { onSubmit: (input: MemberInput) => Promise<void>; onDirtyChange: (dirty: boolean) => void; pending: boolean; error: Error | null }) {
   const form = useForm<MemberValues>({ resolver: zodResolver(memberSchema), defaultValues: { name: "", role: "" } })
-  const { register, handleSubmit, reset, formState: { errors } } = form
+  const { register, handleSubmit, reset, formState: { errors, isDirty } } = form
+
+  useEffect(() => onDirtyChange(isDirty), [isDirty, onDirtyChange])
 
   async function submit(values: MemberValues) {
     if (pending) return
@@ -238,31 +242,47 @@ function EditMemberForm({ member, pending, error, onSubmit, onOpenChange, onBack
 }) {
   const form = useForm<MemberValues>({ resolver: zodResolver(memberSchema), defaultValues: { name: member.name, role: member.role } })
   const { register, handleSubmit, formState: { errors, isDirty } } = form
+  const [confirmBack, setConfirmBack] = useState(false)
   return (
-    <FormDrawer open onOpenChange={onOpenChange} dirty={isDirty} title="编辑成员" description={`修改“${member.name}”的姓名或角色；改名会同步其观察记录。`}>
-      {(requestClose) => (
-        <form className="space-y-5" onSubmit={handleSubmit(async (values) => {
-          if (pending) return
-          try { await onSubmit({ name: values.name.trim(), role: values.role.trim() }) } catch { /* 保留输入并显示错误 */ }
-        })} noValidate>
-          <div className="space-y-2">
-            <Label htmlFor="edit-member-name">成员姓名</Label>
-            <Input id="edit-member-name" autoFocus maxLength={50} aria-invalid={Boolean(errors.name)} {...register("name")} />
-            {errors.name ? <p className="text-sm text-destructive">{errors.name.message}</p> : null}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-member-role">成员角色</Label>
-            <Input id="edit-member-role" maxLength={50} {...register("role")} />
-          </div>
-          {error ? <MutationError error={error} /> : null}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" disabled={pending} onClick={onBack}>返回名册</Button>
-            <Button type="button" variant="outline" disabled={pending} onClick={requestClose}>取消</Button>
-            <Button type="submit" disabled={pending}>{pending ? "正在保存…" : "保存成员"}</Button>
-          </div>
-        </form>
-      )}
-    </FormDrawer>
+    <>
+      <FormDrawer open onOpenChange={onOpenChange} dirty={isDirty} title="编辑成员" description={`修改“${member.name}”的姓名或角色；改名会同步其观察记录。`}>
+        {(requestClose) => (
+          <form className="space-y-5" onSubmit={handleSubmit(async (values) => {
+            if (pending) return
+            try { await onSubmit({ name: values.name.trim(), role: values.role.trim() }) } catch { /* 保留输入并显示错误 */ }
+          })} noValidate>
+            <div className="space-y-2">
+              <Label htmlFor="edit-member-name">成员姓名</Label>
+              <Input id="edit-member-name" autoFocus maxLength={50} aria-invalid={Boolean(errors.name)} {...register("name")} />
+              {errors.name ? <p className="text-sm text-destructive">{errors.name.message}</p> : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-member-role">成员角色</Label>
+              <Input id="edit-member-role" maxLength={50} {...register("role")} />
+            </div>
+            {error ? <MutationError error={error} /> : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" disabled={pending} onClick={() => { if (isDirty) setConfirmBack(true); else onBack() }}>返回名册</Button>
+              <Button type="button" variant="outline" disabled={pending} onClick={requestClose}>取消</Button>
+              <Button type="submit" disabled={pending}>{pending ? "正在保存…" : "保存成员"}</Button>
+            </div>
+          </form>
+        )}
+      </FormDrawer>
+      <ConfirmDialog
+        open={confirmBack}
+        onOpenChange={setConfirmBack}
+        title="放弃未保存修改"
+        description="当前表单有尚未保存的内容，返回名册后这些修改将丢失。"
+        cancelText="继续编辑"
+        actionText="放弃修改"
+        destructive
+        onConfirm={() => {
+          setConfirmBack(false)
+          onBack()
+        }}
+      />
+    </>
   )
 }
 

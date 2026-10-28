@@ -21,7 +21,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function mockApi() {
-  let users = initialUsers.map(({ username, name, level }) => ({ username, name, level, assessmentStatus: "NONE" }))
+  let users = structuredClone(initialUsers)
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     const method = init?.method ?? "GET"
@@ -131,6 +131,31 @@ describe("账号管理", () => {
     await waitFor(() => expect(screen.queryByText("manager")).not.toBeInTheDocument())
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "users"] })
     expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/admin/users/manager", expect.objectContaining({ method: "DELETE" }))
+  })
+
+  it("创建请求真实延迟时，双击也只提交一次", async () => {
+    let resolveCreate!: (response: Response) => void
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path === "/api/auth/csrf") return jsonResponse({ csrfToken: "users-csrf" })
+      if (path === "/api/admin/users" && (init?.method ?? "GET") === "GET") return jsonResponse(initialUsers)
+      if (path === "/api/admin/users" && init?.method === "POST") {
+        return new Promise<Response>((resolve) => { resolveCreate = resolve })
+      }
+      return jsonResponse({ message: `未 mock 的接口：${path}` }, 500)
+    }))
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole("button", { name: "新增用户" }))
+    await user.type(screen.getByLabelText("用户名"), "delayed_user")
+    await user.type(screen.getByLabelText("姓名"), "延迟成员")
+    await user.type(screen.getByLabelText("密码"), "secret6")
+    await user.dblClick(screen.getByRole("button", { name: "创建用户" }))
+
+    expect(screen.getByRole("button", { name: "正在创建…" })).toBeDisabled()
+    expect(vi.mocked(fetch).mock.calls.filter(([path, init]) => path === "/api/admin/users" && init?.method === "POST")).toHaveLength(1)
+    resolveCreate(jsonResponse({ username: "delayed_user", name: "延迟成员", level: 3 }))
+    expect(await screen.findByText("用户已添加")).toBeVisible()
   })
 
   it("长表单有未保存内容时要求确认放弃", async () => {

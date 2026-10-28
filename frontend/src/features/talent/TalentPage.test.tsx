@@ -111,18 +111,23 @@ describe("人才筛选", () => {
     await user.click(screen.getByRole("button", { name: "保存观察记录" }))
 
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/talent/people", expect.objectContaining({ method: "POST" })))
+    expect(invalidate).toHaveBeenCalledTimes(1)
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["talent"] })
 
+    invalidate.mockClear()
     await user.click(await screen.findByRole("button", { name: "编辑成员11的观察记录" }))
     await user.selectOptions(screen.getByLabelText("潜力"), "3")
     await user.click(screen.getByRole("button", { name: "保存观察记录" }))
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/talent/people/person-1-1", expect.objectContaining({ method: "PUT" })))
+    expect(invalidate).toHaveBeenCalledTimes(1)
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["talent"] })
 
+    invalidate.mockClear()
     await user.click(await screen.findByRole("button", { name: "编辑成员12的观察记录" }))
     await user.click(screen.getByRole("button", { name: "删除观察记录" }))
     await user.click(screen.getByRole("button", { name: "确认删除" }))
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/talent/people/person-1-2", expect.objectContaining({ method: "DELETE" })))
+    expect(invalidate).toHaveBeenCalledTimes(1)
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["talent"] })
   })
 
@@ -149,7 +154,10 @@ describe("人才筛选", () => {
       `/api/talent/rosters/${encodeURIComponent(roster)}/members`,
       expect.objectContaining({ method: "POST" }),
     ))
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["talent"] })
 
+    invalidate.mockClear()
     await user.click(screen.getByRole("button", { name: `编辑成员 ${name}` }))
     await user.clear(await screen.findByLabelText("成员姓名"))
     await user.type(screen.getByLabelText("成员姓名"), "新 姓名/乙")
@@ -158,13 +166,17 @@ describe("人才筛选", () => {
       `/api/talent/rosters/${encodeURIComponent(roster)}/members/${encodeURIComponent(name)}`,
       expect.objectContaining({ method: "PUT" }),
     ))
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["talent"] })
 
+    invalidate.mockClear()
     await user.click(screen.getByRole("button", { name: `删除成员 ${name}` }))
     await user.click(screen.getByRole("button", { name: "确认删除" }))
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       `/api/talent/rosters/${encodeURIComponent(roster)}/members/${encodeURIComponent(name)}`,
       expect.objectContaining({ method: "DELETE" }),
     ))
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["talent"] })
   })
 
@@ -194,5 +206,35 @@ describe("人才筛选", () => {
     expect(dialog).toHaveTextContent("无法恢复")
     await user.click(screen.getByRole("button", { name: "确认删除名册" }))
     expect(await screen.findByText(/已删除名册/)).toHaveTextContent("2 名成员、2 条观察记录")
+  })
+
+  it("编辑成员有修改时，返回名册也必须明确确认放弃", async () => {
+    mockApi()
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole("button", { name: "管理名册 教师组" }))
+    await user.click(await screen.findByRole("button", { name: "编辑成员 张三" }))
+    await user.type(await screen.findByLabelText("成员角色"), "组长")
+    await user.click(screen.getByRole("button", { name: "返回名册" }))
+
+    expect(await screen.findByRole("alertdialog", { name: "放弃未保存修改" })).toBeVisible()
+    await user.click(screen.getByRole("button", { name: "继续编辑" }))
+    expect(screen.getByLabelText("成员角色")).toHaveValue("教师组长")
+    await user.click(screen.getByRole("button", { name: "返回名册" }))
+    await user.click(screen.getByRole("button", { name: "放弃修改" }))
+    expect(await screen.findByRole("button", { name: "添加成员" })).toBeVisible()
+  })
+
+  it("添加成员有输入时，关闭管理名册必须确认且可保留输入", async () => {
+    mockApi()
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole("button", { name: "管理名册 教师组" }))
+    await user.type(await screen.findByLabelText("成员姓名"), "未保存成员")
+    await user.click(screen.getByRole("button", { name: "关闭管理名册：教师组" }))
+
+    expect(await screen.findByRole("alertdialog", { name: "放弃未保存修改" })).toBeVisible()
+    await user.click(screen.getByRole("button", { name: "继续编辑" }))
+    expect(screen.getByLabelText("成员姓名")).toHaveValue("未保存成员")
   })
 })
