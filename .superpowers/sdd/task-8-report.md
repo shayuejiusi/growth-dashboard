@@ -145,3 +145,45 @@ tsc -b && vite build 通过。
 ```
 
 自审已覆盖 TasksPage 的任务 CRUD、状态切换、清空、导入、排序及 Dashboard 快捷完成，均使用共享写协调器；备份仅读取，不需要写锁。AI 仍保持未配置空态，未新增提示词、模型、API Key/Base，未调用 AI 分析或内容刷新接口。构建仅有既有第三方注释和主 JS 约 765.47 kB 的 chunk 警告，无构建错误；未启动或遗留后台服务，未 push。
+
+## Task 8 第二轮复核修复
+
+### Important：Tabs 切换导致 pending 状态与预览丢失
+
+- QuickAddDrawer 外层 Tabs 改为受控模式，提取或导入 pending 时禁用两个 Trigger，并在 `onValueChange` 中再次阻止切换。
+- 文档面板使用 `forceMount` 保持 DocumentImport 与 ImportPreview 挂载，普通外层 Tabs 往返保留文本、勾选状态及 Draft 编辑；非激活面板显式设置 `hidden`，避免隐藏内容意外可见、聚焦或交互。
+- DocumentImport 内层文档/收文 Tabs 在 pending 时禁用并守卫切换，不再于 pending 清空 Draft；文本编辑和文件提取入口也在 pending 时禁用并守卫。
+- DocumentImport 与 ImportPreview 增加卸载时的 dirty/submitting 状态清理兜底；该清理解除异常卸载后的外层锁定，但不替代 pending 防切换与防卸载。
+- 回归覆盖：提取中尝试切换、完成后正常关闭；导入中尝试切换、第二项失败后保留反馈与剩余项、重试及关闭恢复；普通往返保留所有编辑且隐藏面板不可见。
+
+### Minor：0000–0099 年日期误判
+
+日期回验不再经过会对 0–99 年加 1900 的 `Date.UTC`，改为从 UTC 基准时间调用 `setUTCFullYear(year, month, day)`，随后继续核对年月日，正确支持 `0000`–`0099` 及其他四位年份。
+
+### 第二轮 RED / GREEN 与最终验证
+
+先在旧实现上运行新增回归测试：
+
+```text
+npm test -- DocumentImport.test.tsx
+Test Files  1 failed (1)
+Tests  4 failed | 12 passed (16)
+```
+
+四项失败分别为外层/内层 Tabs 未禁用、普通切换卸载并丢失 Draft、小年份被误判。修复后同一聚焦命令为 `1 file passed, 16 tests passed`。
+
+最终在 `frontend` 目录执行：
+
+```text
+npm test
+Test Files  14 passed (14)
+Tests  168 passed (168)
+
+npm run lint
+通过，无 ESLint 错误。
+
+npm run build
+tsc -b && vite build 通过。
+```
+
+`git diff --check` 通过，改动仅涉及 QuickAddDrawer、DocumentImport、ImportPreview、日期校验、对应测试及本报告。AI 未配置空态和远程接口边界保持不变。构建仅有既有第三方注释及主 JS 约 765.72 kB 的 chunk 警告，无构建错误；未启动或遗留后台服务，未 push。

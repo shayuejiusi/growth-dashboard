@@ -304,4 +304,101 @@ describe("文档提取与本地快速识别", () => {
     expect(screen.getByRole("dialog")).toBeVisible()
     await act(async () => { finishImport({ imported: 1, total: 1, failedIndex: null, cause: null }) })
   })
+
+  it("提取中禁止切换 Tabs，完成后可正常关闭", async () => {
+    let finishExtract!: (response: Response) => void
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input) === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (String(input) === "/api/ai/extract-text") return new Promise<Response>((resolve) => { finishExtract = resolve })
+      return jsonResponse({}, 500)
+    })
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    render(<QuickAddDrawer open onOpenChange={onOpenChange} onSubmit={vi.fn()} onImport={vi.fn()} />)
+    await openDocumentImport(user)
+    await user.upload(screen.getByLabelText("选择文件"), new File(["raw"], "notes.txt"))
+    await screen.findByText("正在提取文件文本…")
+
+    expect(screen.getByRole("tab", { name: "手动填写" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: "文档导入" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: "文档" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: "收文" })).toBeDisabled()
+    await user.click(screen.getByRole("tab", { name: "手动填写" }))
+    await user.click(screen.getByRole("tab", { name: "收文" }))
+    await act(async () => { finishExtract(jsonResponse({ filename: "notes.txt", text: "提取正文", chars: 4 })) })
+
+    expect(await screen.findByLabelText("文本内容")).toHaveValue("提取正文")
+    await user.click(screen.getByRole("button", { name: "关闭" }))
+    await user.click(await screen.findByRole("button", { name: "放弃修改" }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("导入中禁止切换并保留部分失败反馈、剩余预览及重试关闭能力", async () => {
+    let finishImport!: (result: { imported: number; total: number; failedIndex: number | null; cause: Error | null }) => void
+    const onImport = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finishImport = resolve }))
+      .mockResolvedValueOnce({ imported: 2, total: 2, failedIndex: null, cause: null })
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    render(<QuickAddDrawer open onOpenChange={onOpenChange} onSubmit={vi.fn()} onImport={onImport} />)
+    await openDocumentImport(user)
+    await user.type(screen.getByLabelText("文本内容"), "第一项\n第二项\n第三项")
+    await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
+    await user.click(screen.getByRole("button", { name: "导入所选任务（3 项）" }))
+    await screen.findByRole("button", { name: "正在导入…" })
+
+    expect(screen.getByRole("tab", { name: "手动填写" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: "文档导入" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: "文档" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: "收文" })).toBeDisabled()
+    await user.click(screen.getByRole("tab", { name: "手动填写" }))
+    await user.click(screen.getByRole("tab", { name: "收文" }))
+    await act(async () => { finishImport({ imported: 1, total: 3, failedIndex: 1, cause: new Error("第二项保存失败") }) })
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("已成功 1、失败 1、未执行 1")
+    expect(screen.getByRole("alert")).toHaveTextContent("第二项保存失败")
+    expect(screen.queryByDisplayValue("第一项")).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue("第二项")).toBeVisible()
+    expect(screen.getByDisplayValue("第三项")).toBeVisible()
+    await user.click(screen.getByRole("button", { name: "导入所选任务（2 项）" }))
+    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole("button", { name: "导入所选任务（0 项）" })).toBeDisabled()
+
+    await user.click(screen.getByRole("button", { name: "关闭" }))
+    await user.click(await screen.findByRole("button", { name: "放弃修改" }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("普通外层 Tabs 往返保留文本、勾选和 Draft 编辑，隐藏内容不可见", async () => {
+    const user = userEvent.setup()
+    renderDrawer()
+    await openDocumentImport(user)
+    await user.type(screen.getByLabelText("文本内容"), "第一项\n第二项")
+    await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
+    await user.clear(screen.getByLabelText("任务 1 标题"))
+    await user.type(screen.getByLabelText("任务 1 标题"), "编辑后的第一项")
+    await user.selectOptions(screen.getByLabelText("任务 1 优先级"), "P0")
+    await user.type(screen.getByLabelText("任务 1 截止日期"), "2026-12-01")
+    await user.click(screen.getByLabelText("选择任务 2"))
+
+    await user.click(screen.getByRole("tab", { name: "手动填写" }))
+    expect(screen.getByLabelText("文本内容")).not.toBeVisible()
+    await user.click(screen.getByRole("tab", { name: "文档导入" }))
+
+    expect(screen.getByLabelText("文本内容")).toHaveValue("第一项\n第二项")
+    expect(screen.getByLabelText("任务 1 标题")).toHaveValue("编辑后的第一项")
+    expect(screen.getByLabelText("任务 1 优先级")).toHaveValue("P0")
+    expect(screen.getByLabelText("任务 1 截止日期")).toHaveValue("2026-12-01")
+    expect(screen.getByLabelText("选择任务 2")).not.toBeChecked()
+  })
+
+  it("正确识别 0000 至 0099 的四位年份", async () => {
+    const { recognizeTasksLocally } = await import("./ai-api")
+
+    expect(recognizeTasksLocally("0000-01-01 元年\n0099-12-31 九十九年\n0100-02-28 一百年")).toEqual([
+      { title: "元年", priority: "P2", dueDate: "0000-01-01", needReport: false },
+      { title: "九十九年", priority: "P2", dueDate: "0099-12-31", needReport: false },
+      { title: "一百年", priority: "P2", dueDate: "0100-02-28", needReport: false },
+    ])
+  })
 })

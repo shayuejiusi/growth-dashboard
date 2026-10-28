@@ -29,6 +29,7 @@ export function QuickAddDrawer({ open, writePending, onOpenChange, onSubmit, onI
 }
 
 function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }: Omit<QuickAddDrawerProps, "open">) {
+  const [activeTab, setActiveTab] = useState<"manual" | "document">("manual")
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [documentDirty, setDocumentDirty] = useState(false)
   const [documentSubmitting, setDocumentSubmitting] = useState(false)
@@ -73,10 +74,13 @@ function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }
           {closeBlocked && (isSubmitting || documentSubmitting) ? (
             <Alert><AlertDescription>{documentSubmitting ? "正在提取或导入，完成后才能关闭。" : "正在创建任务，完成后才能关闭。"}</AlertDescription></Alert>
           ) : null}
-          <Tabs defaultValue="manual">
+          <Tabs value={activeTab} onValueChange={(value) => {
+            if (documentSubmitting) return
+            setActiveTab(value as "manual" | "document")
+          }}>
             <TabsList className="grid w-full grid-cols-2" aria-label="快速新建方式">
-              <TabsTrigger value="manual">手动填写</TabsTrigger>
-              <TabsTrigger value="document">文档导入</TabsTrigger>
+              <TabsTrigger value="manual" disabled={documentSubmitting}>手动填写</TabsTrigger>
+              <TabsTrigger value="document" disabled={documentSubmitting}>文档导入</TabsTrigger>
             </TabsList>
             <TabsContent value="manual" className="pt-2">
               <form id="quick-add-form" className="space-y-4" onSubmit={handleSubmit(submit)} noValidate>
@@ -104,7 +108,7 @@ function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }
                 <Button type="submit" form="quick-add-form" disabled={isSubmitting || writePending}>{isSubmitting ? "正在创建…" : "创建任务"}</Button>
               </DialogFooter>
             </TabsContent>
-            <TabsContent value="document" className="pt-2">
+            <TabsContent value="document" className="pt-2" forceMount hidden={activeTab !== "document"}>
               <DocumentImport
                 writePending={writePending}
                 onDirtyChange={setDocumentDirty}

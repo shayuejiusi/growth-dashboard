@@ -29,6 +29,10 @@ export function ImportPreview({ drafts, writePending = false, onSubmittingChange
     onSubmittingChange?.(submitting)
   }, [onSubmittingChange, submitting])
 
+  useEffect(() => () => {
+    onSubmittingChange?.(false)
+  }, [onSubmittingChange])
+
   function update(id: number, patch: Partial<PreviewItem>) {
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item))
   }

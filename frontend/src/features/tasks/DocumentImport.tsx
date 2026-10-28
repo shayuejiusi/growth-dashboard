@@ -35,14 +35,20 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
     onSubmittingChange?.(extracting || importing)
   }, [extracting, importing, onSubmittingChange])
 
+  useEffect(() => () => {
+    onDirtyChange?.(false)
+    onSubmittingChange?.(false)
+  }, [onDirtyChange, onSubmittingChange])
+
   function updateText(value: string) {
+    if (extracting || importing) return
     setText(value)
     setDrafts(null)
     setError(null)
   }
 
   async function extract(file: File | undefined) {
-    if (!file) return
+    if (!file || extracting || importing) return
     setError(null)
     setFileMessage(null)
     setDrafts(null)
@@ -79,10 +85,14 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
 
   return (
     <div className="space-y-4">
-      <Tabs value={kind} onValueChange={(value) => { setKind(value as "doc" | "official"); setDrafts(null) }}>
+      <Tabs value={kind} onValueChange={(value) => {
+        if (extracting || importing) return
+        setKind(value as "doc" | "official")
+        setDrafts(null)
+      }}>
         <TabsList className="grid w-full grid-cols-2" aria-label="导入文本类型">
-          <TabsTrigger value="doc">文档</TabsTrigger>
-          <TabsTrigger value="official">收文</TabsTrigger>
+          <TabsTrigger value="doc" disabled={extracting || importing}>文档</TabsTrigger>
+          <TabsTrigger value="official" disabled={extracting || importing}>收文</TabsTrigger>
         </TabsList>
         <TabsContent value="doc" className="pt-2 text-sm text-muted-foreground">适用于文档、会议纪要和普通工作材料。</TabsContent>
         <TabsContent value="official" className="pt-2 text-sm text-muted-foreground">适用于收文、通知或待落实文件，可在识别后校对任务。</TabsContent>
@@ -99,6 +109,7 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
           id="document-text"
           className="min-h-32"
           value={text}
+          disabled={extracting || importing}
           placeholder={kind === "official" ? "粘贴收文或通知正文，每个非空行可作为一项待办。" : "粘贴文本，或选择文件提取内容；每个非空行可作为一项待办。"}
           onChange={(event) => updateText(event.target.value)}
         />
