@@ -22,6 +22,9 @@ export default defineConfig({
       env: {
         PORT: "7100",
         DB_URL: "jdbc:h2:mem:growth-dashboard-e2e;DB_CLOSE_DELAY=-1",
+        DB_DRIVER: "org.h2.Driver",
+        DB_USER: "sa",
+        DB_PASSWORD: "",
         FRONTEND_ORIGINS: "http://127.0.0.1:5173",
         COOKIE_SECURE: "false",
         AI_BASE_URL: "",

@@ -64,3 +64,88 @@ test("开发与生产环境变量边界清晰且不包含真实凭据", () => {
   }
   assert.doesNotMatch(`${manual}\n${read("README.md")}`, /sk-[A-Za-z0-9_-]{8,}/)
 })
+
+function expectJsonError(block, status) {
+  assert.match(block, /default_type\s+application\/json;/)
+  assert.match(block, new RegExp(`return\\s+${status}\\s+'`))
+  for (const field of ["timestamp", "status", "code", "message", "path", "requestId"]) {
+    assert.ok(block.includes(`\"${field}\"`), `JSON 错误缺少 ${field}`)
+  }
+  assert.doesNotMatch(block, /try_files|index\.html|proxy_pass/)
+}
+
+test("两个站点的精确 /api 与 /api/ 都返回六字段 JSON 404", () => {
+  for (const path of ["deploy/frontend-nginx.conf", "deploy/api-nginx.conf"]) {
+    const config = read(path)
+    for (const route of ["/api", "/api/"]) {
+      const escaped = route.replaceAll("/", "\\/")
+      const block = config.match(new RegExp(`location\\s+=\\s+${escaped}\\s*\\{(?<body>[\\s\\S]*?)\\n\\s*\\}`))?.groups?.body ?? ""
+      expectJsonError(block, 404)
+    }
+  }
+})
+
+test("两个代理将 502/503/504 转换为对应六字段 JSON 且不进入 SPA", () => {
+  const cases = [[502, "bad_gateway"], [503, "upstream_unavailable"], [504, "gateway_timeout"]]
+  for (const path of ["deploy/frontend-nginx.conf", "deploy/api-nginx.conf"]) {
+    const config = read(path)
+    const proxy = config.match(/location\s+\^~\s+\/api\/\s*\{(?<body>[\s\S]*?)\n\s*\}/)?.groups?.body ?? ""
+    assert.match(proxy, /proxy_intercept_errors\s+on;/)
+    for (const [status, name] of cases) {
+      assert.match(config, new RegExp(`error_page\\s+${status}\\s+=\\s+@${name};`))
+      const block = config.match(new RegExp(`location\\s+@${name}\\s*\\{(?<body>[\\s\\S]*?)\\n\\s*\\}`))?.groups?.body ?? ""
+      expectJsonError(block, status)
+    }
+  }
+})
+
+test("双跳转发只在受信前端边界保留公网元数据并串联请求 ID", () => {
+  const frontend = read("deploy/frontend-nginx.conf")
+  const frontendProxy = frontend.match(/location\s+\^~\s+\/api\/\s*\{(?<body>[\s\S]*?)\n\s*\}/)?.groups?.body ?? ""
+  assert.match(frontendProxy, /proxy_set_header\s+X-Forwarded-For\s+\$remote_addr;/)
+  assert.match(frontendProxy, /proxy_set_header\s+X-Forwarded-Host\s+dashboard\.example\.com;/)
+  assert.match(frontendProxy, /proxy_set_header\s+X-Request-ID\s+\$request_id;/)
+
+  const api = read("deploy/api-nginx.conf")
+  assert.match(api, /map\s+\$remote_addr\s+\$dashboard_from_frontend\s*\{/)
+  assert.match(api, /192\.0\.2\.10\s+1;/)
+  for (const variable of ["dashboard_client_ip", "dashboard_forwarded_for", "dashboard_forwarded_host", "dashboard_forwarded_proto"]) {
+    assert.match(api, new RegExp(`map\\s+\\$dashboard_from_frontend\\s+\\$${variable}\\s*\\{`))
+  }
+  assert.match(api, /1\s+\$proxy_add_x_forwarded_for;/)
+  assert.match(api, /0\s+\$remote_addr;/)
+  assert.match(api, /1\s+\$http_x_forwarded_host;/)
+  assert.match(api, /0\s+\$host;/)
+  assert.match(api, /map\s+\$http_x_request_id\s+\$dashboard_request_id\s*\{[\s\S]*?""\s+\$request_id;/)
+  const apiProxy = api.match(/location\s+\^~\s+\/api\/\s*\{(?<body>[\s\S]*?)\n\s*\}/)?.groups?.body ?? ""
+  assert.match(apiProxy, /proxy_set_header\s+X-Forwarded-For\s+\$dashboard_forwarded_for;/)
+  assert.match(apiProxy, /proxy_set_header\s+X-Forwarded-Host\s+\$dashboard_forwarded_host;/)
+  assert.match(apiProxy, /proxy_set_header\s+X-Request-ID\s+\$dashboard_request_id;/)
+
+  for (const [config, domain] of [[frontend, "dashboard.example.com"], [api, "api.example.com"]]) {
+    assert.match(config, new RegExp(`return 301 https://${domain.replaceAll(".", "\\.")}\\$request_uri;`))
+    assert.doesNotMatch(config, /return\s+301[^\n]*\$host/)
+    assert.match(config, /listen\s+80\s+default_server;/)
+    assert.match(config, /return\s+444;/)
+  }
+})
+
+test("smoke 拒绝占用端口、处理 spawn/error/signal 并校验真实子进程 JSON", () => {
+  const smoke = read("deploy/smoke-test.mjs")
+  for (const required of ["SMOKE_PORT", "findFreePort", "assertPortAvailable", "stopPromise", "body.code"]) {
+    assert.ok(smoke.includes(required), `smoke 缺少 ${required}`)
+  }
+  assert.match(smoke, /child\.once\("error"/)
+  assert.match(smoke, /process\.once\("SIGINT"/)
+  assert.match(smoke, /process\.once\("SIGTERM"/)
+  assert.match(smoke, /await\s+childExit/)
+})
+
+test("smoke 与 Playwright 强制完整 H2 环境，不继承 MySQL 凭据", () => {
+  for (const path of ["deploy/smoke-test.mjs", "frontend/playwright.config.ts"]) {
+    const config = read(path)
+    assert.match(config, /DB_DRIVER:\s*"org\.h2\.Driver"/)
+    assert.match(config, /DB_USER:\s*"sa"/)
+    assert.match(config, /DB_PASSWORD:\s*""/)
+  }
+})

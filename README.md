@@ -25,7 +25,7 @@ npm run dev
 mvn clean test
 mvn package
 node --test deploy/deployment-contract.test.mjs
-node deploy/smoke-test.mjs   # 真实 Jar 冒烟；可用 JAVA_CMD 指定 Java 17
+node deploy/smoke-test.mjs   # 真实 Jar 冒烟；默认动态空闲端口，可用 JAVA_CMD 指定 Java 17
 
 cd frontend
 npm ci
