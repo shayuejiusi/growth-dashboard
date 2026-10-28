@@ -1,8 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useState } from "react"
-import { useForm, type UseFormReturn } from "react-hook-form"
+import { Controller, useForm, type UseFormReturn } from "react-hook-form"
 
 import { FormDrawer } from "@/components/feedback/FormDrawer"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -32,7 +33,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 
 function TaskFormContent({ form, requestClose, onSubmit, writePending = false }: TaskFormContentProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = form
+  const { control, register, handleSubmit, formState: { errors, isSubmitting } } = form
 
   async function submit(values: TaskFormValues) {
     setSubmitError(null)
@@ -62,7 +63,9 @@ function TaskFormContent({ form, requestClose, onSubmit, writePending = false }:
         </div>
         <div className="space-y-2">
           <Label htmlFor="task-due-date">截止日期</Label>
-          <Input id="task-due-date" type="date" aria-invalid={Boolean(errors.dueDate)} aria-describedby="task-due-date-error" {...register("dueDate")} />
+          <Controller control={control} name="dueDate" render={({ field }) => (
+            <DatePicker id="task-due-date" value={field.value} onChange={field.onChange} aria-invalid={Boolean(errors.dueDate)} aria-describedby="task-due-date-error" />
+          )} />
           <FieldError id="task-due-date-error" message={errors.dueDate?.message} />
         </div>
         <div className="space-y-2">

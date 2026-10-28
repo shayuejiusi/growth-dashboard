@@ -99,7 +99,7 @@ describe("文档提取与本地快速识别", () => {
     const user = userEvent.setup()
     renderDrawer(onImport)
     await openDocumentImport(user)
-    await user.type(screen.getByLabelText("文本内容"), "- 完成周报\n2026-11-02 提交材料")
+    await user.type(screen.getByLabelText("文本内容"), "2026-11-02 完成周报\n2026-11-03 提交材料")
 
     await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
 
@@ -111,8 +111,8 @@ describe("文档提取与本地快速识别", () => {
     await user.clear(screen.getByLabelText("任务 1 标题"))
     await user.type(screen.getByLabelText("任务 1 标题"), "已编辑周报")
     await user.selectOptions(screen.getByLabelText("任务 1 优先级"), "P0")
-    await user.clear(screen.getByLabelText("任务 1 截止日期"))
-    await user.type(screen.getByLabelText("任务 1 截止日期"), "2026-11-01")
+    await user.click(screen.getByLabelText("任务 1 截止日期"))
+    await user.click(screen.getByRole("button", { name: "2026年11月1日" }))
     await user.click(screen.getByLabelText("选择任务 2"))
     await user.click(screen.getByRole("button", { name: "导入所选任务（1 项）" }))
 
@@ -230,11 +230,11 @@ describe("文档提取与本地快速识别", () => {
     await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
 
     expect(screen.getByLabelText("任务 1 标题")).toHaveValue("2026-13-40 第一项")
-    expect(screen.getByLabelText("任务 1 截止日期")).toHaveValue("")
+    expect(screen.getByLabelText("任务 1 截止日期")).toHaveTextContent("选择日期")
     expect(screen.getByLabelText("任务 2 标题")).toHaveValue("2026-02-31 第二项")
-    expect(screen.getByLabelText("任务 2 截止日期")).toHaveValue("")
+    expect(screen.getByLabelText("任务 2 截止日期")).toHaveTextContent("选择日期")
     expect(screen.getByLabelText("任务 3 标题")).toHaveValue("第三项")
-    expect(screen.getByLabelText("任务 3 截止日期")).toHaveValue("2026-02-28")
+    expect(screen.getByLabelText("任务 3 截止日期")).toHaveTextContent("2026年2月28日")
   })
 
   it("提取文本及草稿编辑触发关闭确认，取消保留且确认放弃", async () => {
@@ -373,22 +373,23 @@ describe("文档提取与本地快速识别", () => {
     const user = userEvent.setup()
     renderDrawer()
     await openDocumentImport(user)
-    await user.type(screen.getByLabelText("文本内容"), "第一项\n第二项")
+    await user.type(screen.getByLabelText("文本内容"), "2026-12-02 第一项\n第二项")
     await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
     await user.clear(screen.getByLabelText("任务 1 标题"))
     await user.type(screen.getByLabelText("任务 1 标题"), "编辑后的第一项")
     await user.selectOptions(screen.getByLabelText("任务 1 优先级"), "P0")
-    await user.type(screen.getByLabelText("任务 1 截止日期"), "2026-12-01")
+    await user.click(screen.getByLabelText("任务 1 截止日期"))
+    await user.click(screen.getByRole("button", { name: "2026年12月1日" }))
     await user.click(screen.getByLabelText("选择任务 2"))
 
     await user.click(screen.getByRole("tab", { name: "手动填写" }))
     expect(screen.getByLabelText("文本内容")).not.toBeVisible()
     await user.click(screen.getByRole("tab", { name: "文档导入" }))
 
-    expect(screen.getByLabelText("文本内容")).toHaveValue("第一项\n第二项")
+    expect(screen.getByLabelText("文本内容")).toHaveValue("2026-12-02 第一项\n第二项")
     expect(screen.getByLabelText("任务 1 标题")).toHaveValue("编辑后的第一项")
     expect(screen.getByLabelText("任务 1 优先级")).toHaveValue("P0")
-    expect(screen.getByLabelText("任务 1 截止日期")).toHaveValue("2026-12-01")
+    expect(screen.getByLabelText("任务 1 截止日期")).toHaveTextContent("2026年12月1日")
     expect(screen.getByLabelText("选择任务 2")).not.toBeChecked()
   })
 

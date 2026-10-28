@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { BatchImportResult, TaskDraft } from "./ai-api"
@@ -94,7 +95,7 @@ export function ImportPreview({ drafts, writePending = false, onSubmittingChange
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`draft-date-${item.id}`}>任务 {number} 截止日期</Label>
-                <Input id={`draft-date-${item.id}`} type="date" value={item.dueDate ?? ""} onChange={(event) => update(item.id, { dueDate: event.target.value || null })} />
+                <DatePicker id={`draft-date-${item.id}`} value={item.dueDate ?? ""} onChange={(dueDate) => update(item.id, { dueDate: dueDate || null })} />
               </div>
             </fieldset>
           )

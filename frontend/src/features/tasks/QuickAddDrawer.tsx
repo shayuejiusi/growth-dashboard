@@ -1,10 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useCallback, useState } from "react"
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
 
 import { ConfirmDialog } from "@/components/feedback/ConfirmDialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -35,7 +36,7 @@ function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }
   const [documentSubmitting, setDocumentSubmitting] = useState(false)
   const [closeBlocked, setCloseBlocked] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const { register, handleSubmit, formState: { errors, isDirty, isSubmitting } } = useForm<TaskFormValues>({
+  const { control, register, handleSubmit, formState: { errors, isDirty, isSubmitting } } = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: emptyTaskForm,
   })
@@ -98,7 +99,9 @@ function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="quick-due-date">截止日期</Label>
-                    <Input id="quick-due-date" type="date" {...register("dueDate")} />
+                    <Controller control={control} name="dueDate" render={({ field }) => (
+                      <DatePicker id="quick-due-date" value={field.value} onChange={field.onChange} />
+                    )} />
                   </div>
                 </div>
                 {submitError ? <Alert variant="destructive"><AlertDescription>{submitError}</AlertDescription></Alert> : null}
