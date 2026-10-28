@@ -201,6 +201,16 @@ class AuthApiIntegrationTest {
     }
 
     @Test
+    void legacyFrontendFilesRemainOnDiskButAreNotServed() throws Exception {
+        mvc.perform(get("/"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/index.html"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/tasks"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void unexpectedErrorsDoNotLeakExceptionDetails() throws Exception {
         Cookie session = login("admin", "admin123").andReturn()
                 .getResponse().getCookie("DASHBOARD_SESSION");
