@@ -21,18 +21,24 @@ interface SearchDialogProps {
   returnFocusRef?: RefObject<HTMLButtonElement | null>
 }
 
-const resultTypes: Record<SearchResult["type"], { label: string; icon: LucideIcon; path: string }> = {
-  task: { label: "任务", icon: SquareCheckBig, path: "/tasks" },
-  person: { label: "人员", icon: UserRound, path: "/talent" },
-  content: { label: "内容", icon: FileText, path: "/content" },
+const resultTypes: Record<SearchResult["type"], { label: string; icon: LucideIcon; path: string; parameter: string }> = {
+  task: { label: "任务", icon: SquareCheckBig, path: "/tasks", parameter: "focus" },
+  person: { label: "人员", icon: UserRound, path: "/talent", parameter: "person" },
+  content: { label: "内容", icon: FileText, path: "/content", parameter: "item" },
 }
 
 function safeResultPath(result: SearchResult) {
-  if (typeof result.path !== "string" || !result.path.startsWith("/") || result.path.startsWith("//")) return null
+  if (typeof result.path !== "string" || !result.path.startsWith("/") || result.path.startsWith("//") || result.path.includes("#")) return null
   try {
     const url = new URL(result.path, window.location.origin)
-    if (url.origin !== window.location.origin || url.pathname !== resultTypes[result.type].path) return null
-    return `${url.pathname}${url.search}${url.hash}`
+    const resultType = resultTypes[result.type]
+    if (url.origin !== window.location.origin || url.pathname !== resultType.path) return null
+    const parameters = [...url.searchParams.entries()]
+    const expectedValue = result.type === "content" ? result.title : result.id
+    if (parameters.length !== 1) return null
+    const [[name, value]] = parameters
+    if (name !== resultType.parameter || !value.trim() || value !== expectedValue) return null
+    return `${url.pathname}${url.search}`
   } catch {
     return null
   }
@@ -135,7 +141,7 @@ export function SearchDialog({ open, onOpenChange, returnFocusRef }: SearchDialo
             role="combobox"
             aria-label="全局搜索"
             aria-autocomplete="list"
-            aria-expanded={open}
+            aria-expanded={showResultList}
             aria-controls={showResultList ? "global-search-results" : undefined}
             aria-activedescendant={showResultList && activeIndex >= 0 ? `global-search-option-${activeIndex}` : undefined}
             value={query}

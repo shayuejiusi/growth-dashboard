@@ -106,3 +106,24 @@ E2E 覆盖：7 个主要页面在 390×844 与 1440×900 的长文本/无页面�
 复核后自审已逐项确认焦点策略、路径白名单、IME 短路、ARIA 关联及 Outlet 局部 Suspense；未留下生产调试日志或临时开发服务器。
 
 未验证边界不变：默认 Playwright Chromium 未运行，E2E 仍使用 mock API 和 Windows Edge；未验证 Firefox、WebKit、真实移动设备及真实后端。主包仍略高于 500 kB，保留 Vite 警告，第三方 zod 注释提示仍为非阻断警告。
+
+---
+
+## 参数契约与 Combobox 最小修复（基线 `287343619037789eda4cf95cc3445224a73031ed`）
+
+- `safeResultPath` 现在要求每个结果恰好一个非空参数：task 仅 `focus={result.id}`，person 仅 `person={result.id}`，content 按后端规则仅 `item={urlEncodedTitle}`；额外/重复/空参数、错误值和任意 hash 均拒绝，合法编码路径保留跳转。
+- `aria-expanded` 改为真实 `showResultList`；初始/空结果为 false，实际结果列表为 true。
+
+真实 RED：旧实现运行 `npm test -- SearchDialog.test.tsx`，23 项中 8 项失败，分别是 `new=1`、额外参数、重复参数、空值、hash、id 不一致及两项展开状态；合法 task/person/content 三项跳转在旧实现和修复后均通过。
+
+最终 GREEN：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm test -- SearchDialog.test.tsx` | PASS，23/23 |
+| `npm test` | PASS，18 files / 212 tests |
+| `npm run lint` | PASS，0 errors / 0 warnings |
+| `PLAYWRIGHT_CHANNEL=msedge npm run test:e2e -- responsive.spec.ts` | PASS，真实 Windows Edge 5/5（因搜索路径变更而重跑） |
+| `npm run build` | PASS；主包 509.59 kB，gzip 162.39 kB；CSS 46.27 kB，gzip 8.86 kB |
+
+默认 Chromium、真实后端及其他浏览器/设备边界不变；主包 >500 kB 和第三方 zod 注释警告仍存在。临时服务已停止。

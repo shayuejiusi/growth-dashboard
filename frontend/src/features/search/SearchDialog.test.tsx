@@ -163,7 +163,7 @@ describe("全局搜索", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
       tasks: [taskResult, { ...taskResult, id: "task-2", title: "第二项任务", path: "/tasks?focus=task-2" }],
       people: [{ type: "person", id: "p1", title: "张老师", subtitle: "教师组", path: "/talent?person=p1" }],
-      content: [{ type: "content", id: "c1", title: "德育文章", subtitle: "每日精选", path: "/content?item=c1" }],
+      content: [{ type: "content", id: "德育文章", title: "德育文章", subtitle: "每日精选", path: "/content?item=%E5%BE%B7%E8%82%B2%E6%96%87%E7%AB%A0" }],
     })))
     const user = userEvent.setup()
     renderSearch()
@@ -206,9 +206,35 @@ describe("全局搜索", () => {
   })
 
   it.each([
+    ["任务", taskResult, "/tasks?focus=task-1"],
+    ["人员", { type: "person", id: "p1", title: "张老师", subtitle: "教师组", path: "/talent?person=p1" }, "/talent?person=p1"],
+    ["内容", { type: "content", id: "成长 & 发展", title: "成长 & 发展", subtitle: "管理月刊", path: "/content?item=%E6%88%90%E9%95%BF%20%26%20%E5%8F%91%E5%B1%95" }, "/content?item=%E6%88%90%E9%95%BF%20%26%20%E5%8F%91%E5%B1%95"],
+  ])("允许合法%s路径跳转", async (_label, result, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      tasks: result.type === "task" ? [result] : [],
+      people: result.type === "person" ? [result] : [],
+      content: result.type === "content" ? [result] : [],
+    })))
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(searchInput(), "德")
+    await user.click(await screen.findByRole("option"))
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(screen.getByTestId("location")).toHaveTextContent(expected)
+  })
+
+  it.each([
     ["外链", "https://example.com/tasks?focus=task-1"],
     ["协议相对外链", "//example.com/tasks?focus=task-1"],
     ["错误内部路径", "/admin/users?focus=task-1"],
+    ["新建任务参数", "/tasks?new=1"],
+    ["额外参数", "/tasks?focus=task-1&new=1"],
+    ["重复参数", "/tasks?focus=task-1&focus=task-1"],
+    ["空参数值", "/tasks?focus="],
+    ["任意 hash", "/tasks?focus=task-1#details"],
+    ["参数值与 id 不一致", "/tasks?focus=other"],
   ])("拒绝%s并保留搜索面板", async (_label, path) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
       ...emptyResults,
@@ -267,13 +293,26 @@ describe("全局搜索", () => {
     renderSearch()
 
     expect(searchInput()).not.toHaveAttribute("aria-controls")
+    expect(searchInput()).toHaveAttribute("aria-expanded", "false")
     await user.type(searchInput(), "德")
     const option = await screen.findByRole("option", { name: /德育工作计划/ })
 
     expect(searchInput()).toHaveAttribute("aria-controls", "global-search-results")
+    expect(searchInput()).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByRole("group", { name: "任务" })).toBeInTheDocument()
     expect(option).toHaveAttribute("tabindex", "-1")
     expect(searchInput()).toHaveFocus()
+  })
+
+  it("空结果时 combobox 保持未展开且没有列表关联", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(emptyResults)))
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(searchInput(), "德")
+    expect(await screen.findByText("未找到匹配内容")).toBeInTheDocument()
+    expect(searchInput()).toHaveAttribute("aria-expanded", "false")
+    expect(searchInput()).not.toHaveAttribute("aria-controls")
   })
 
   it("Escape 关闭搜索面板", async () => {
