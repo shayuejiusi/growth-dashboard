@@ -56,6 +56,23 @@ describe("API client", () => {
     }))
   })
 
+  it.each([
+    ["Blob", () => new Blob(["raw"], { type: "application/octet-stream" })],
+    ["ArrayBuffer", () => new TextEncoder().encode("raw").buffer],
+    ["URLSearchParams", () => new URLSearchParams({ title: "任务" })],
+  ])("sends native %s bodies unchanged without JSON headers", async (_label, createBody) => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-native" }))
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const body = createBody()
+
+    await api("/api/native-body", { method: "POST", body })
+
+    expect(fetch).toHaveBeenLastCalledWith("/api/native-body", expect.objectContaining({
+      body,
+      headers: { Accept: "application/json", "X-CSRF-TOKEN": "csrf-native" },
+    }))
+  })
+
   it("uses cookies on reads without requesting a csrf token", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ id: "t1" }))
 

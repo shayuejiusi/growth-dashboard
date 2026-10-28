@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -17,7 +17,7 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-function renderDrawer(onImport = vi.fn().mockResolvedValue(undefined)) {
+function renderDrawer(onImport = vi.fn().mockResolvedValue({ imported: 1, total: 1, failedIndex: null, cause: null })) {
   const onSubmit = vi.fn().mockResolvedValue(undefined)
   render(
     <QuickAddDrawer
@@ -95,7 +95,7 @@ describe("文档提取与本地快速识别", () => {
   })
 
   it("本地规则预览可勾选和编辑，导入前不创建任务", async () => {
-    const onImport = vi.fn().mockResolvedValue(undefined)
+    const onImport = vi.fn().mockResolvedValue({ imported: 1, total: 1, failedIndex: null, cause: null })
     const user = userEvent.setup()
     renderDrawer(onImport)
     await openDocumentImport(user)
@@ -171,5 +171,137 @@ describe("文档提取与本地快速识别", () => {
     const post = vi.mocked(fetch).mock.calls.find(([path, init]) => path === "/api/tasks" && init?.method === "POST")
     expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ title: "整理导入任务", priority: "P2", dueDate: null })
     expect(vi.mocked(fetch).mock.calls.filter(([path]) => String(path).includes("doc-to-tasks"))).toHaveLength(0)
+  })
+
+  it("第二项失败时保留剩余项、刷新缓存，重试只创建失败和未执行项", async () => {
+    const created: string[] = []
+    const attempted: string[] = []
+    let secondShouldFail = true
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (path === "/api/tasks" && (init?.method ?? "GET") === "GET") return jsonResponse(created.map((title, index) => ({ id: `task-${index}`, title, status: "TODO" })))
+      if (path === "/api/tasks" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as TaskInput
+        attempted.push(body.title)
+        if (body.title === "第二项" && secondShouldFail) {
+          secondShouldFail = false
+          return jsonResponse({ message: "第二项保存失败" }, 500)
+        }
+        created.push(body.title)
+        return jsonResponse({ ...body, id: `task-${created.length}`, status: "TODO" })
+      }
+      return jsonResponse({ message: `未 mock 的接口：${path}` }, 500)
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter><TasksPage /></MemoryRouter>
+        <Toaster theme="light" />
+      </QueryClientProvider>,
+    )
+    await user.click(await screen.findByRole("button", { name: "快速新建" }))
+    await openDocumentImport(user)
+    await user.type(screen.getByLabelText("文本内容"), "第一项\n第二项\n第三项")
+    await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
+    await user.click(screen.getByRole("button", { name: "导入所选任务（3 项）" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("已成功 1、失败 1、未执行 1")
+    expect(screen.getByRole("alert")).toHaveTextContent("第二项保存失败")
+    expect(created).toEqual(["第一项"])
+    expect(screen.queryByDisplayValue("第一项")).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue("第二项")).toBeVisible()
+    expect(screen.getByDisplayValue("第三项")).toBeVisible()
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([path, init]) => path === "/api/tasks" && (init?.method ?? "GET") === "GET").length).toBeGreaterThanOrEqual(2))
+
+    await user.click(screen.getByRole("button", { name: "导入所选任务（2 项）" }))
+
+    expect(await screen.findByText("已导入 2 项任务")).toBeVisible()
+    expect(created).toEqual(["第一项", "第二项", "第三项"])
+    expect(attempted).toEqual(["第一项", "第二项", "第二项", "第三项"])
+  })
+
+  it("非法日历日期保留在标题中且不进入截止日期", async () => {
+    const user = userEvent.setup()
+    renderDrawer()
+    await openDocumentImport(user)
+    await user.type(screen.getByLabelText("文本内容"), "2026-13-40 第一项\n2026-02-31 第二项\n2026-02-28 第三项")
+    await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
+
+    expect(screen.getByLabelText("任务 1 标题")).toHaveValue("2026-13-40 第一项")
+    expect(screen.getByLabelText("任务 1 截止日期")).toHaveValue("")
+    expect(screen.getByLabelText("任务 2 标题")).toHaveValue("2026-02-31 第二项")
+    expect(screen.getByLabelText("任务 2 截止日期")).toHaveValue("")
+    expect(screen.getByLabelText("任务 3 标题")).toHaveValue("第三项")
+    expect(screen.getByLabelText("任务 3 截止日期")).toHaveValue("2026-02-28")
+  })
+
+  it("提取文本及草稿编辑触发关闭确认，取消保留且确认放弃", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input) === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (String(input) === "/api/ai/extract-text") return jsonResponse({ filename: "notes.txt", text: "提取任务", chars: 4 })
+      return jsonResponse({}, 500)
+    })
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    render(<QuickAddDrawer open onOpenChange={onOpenChange} onSubmit={vi.fn()} onImport={vi.fn()} />)
+    await openDocumentImport(user)
+    await user.upload(screen.getByLabelText("选择文件"), new File(["raw"], "notes.txt"))
+    await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
+    await user.type(screen.getByLabelText("任务 1 标题"), "已编辑")
+
+    await user.click(screen.getByRole("button", { name: "关闭" }))
+    const confirm = await screen.findByRole("alertdialog")
+    await user.click(screen.getByRole("button", { name: "继续编辑" }))
+    expect(screen.getByLabelText("任务 1 标题")).toHaveValue("提取任务已编辑")
+    expect(onOpenChange).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: "关闭" }))
+    await user.click(await screen.findByRole("button", { name: "放弃修改" }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(confirm).not.toBeInTheDocument()
+  })
+
+  it("文本提取提交中阻止误关闭并给出明确提示", async () => {
+    let finishExtract!: (response: Response) => void
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input) === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (String(input) === "/api/ai/extract-text") return new Promise<Response>((resolve) => { finishExtract = resolve })
+      return jsonResponse({}, 500)
+    })
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    render(<QuickAddDrawer open onOpenChange={onOpenChange} onSubmit={vi.fn()} onImport={vi.fn()} />)
+    await openDocumentImport(user)
+    await user.upload(screen.getByLabelText("选择文件"), new File(["raw"], "notes.txt"))
+    await screen.findByText("正在提取文件文本…")
+
+    await user.click(screen.getByRole("button", { name: "关闭" }))
+
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(await screen.findByText("正在提取或导入，完成后才能关闭。")).toBeVisible()
+    expect(screen.getByRole("dialog")).toBeVisible()
+    await act(async () => { finishExtract(jsonResponse({ filename: "notes.txt", text: "正文", chars: 2 })) })
+  })
+
+  it("任务导入提交中阻止误关闭并给出明确提示", async () => {
+    let finishImport!: (result: { imported: number; total: number; failedIndex: null; cause: null }) => void
+    const onImport = vi.fn().mockReturnValue(new Promise((resolve) => { finishImport = resolve }))
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    render(<QuickAddDrawer open onOpenChange={onOpenChange} onSubmit={vi.fn()} onImport={onImport} />)
+    await openDocumentImport(user)
+    await user.type(screen.getByLabelText("文本内容"), "待导入")
+    await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
+    await user.click(screen.getByRole("button", { name: "导入所选任务（1 项）" }))
+    await screen.findByRole("button", { name: "正在导入…" })
+
+    await user.click(screen.getByRole("button", { name: "关闭" }))
+
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(await screen.findByText("正在提取或导入，完成后才能关闭。")).toBeVisible()
+    expect(screen.getByRole("dialog")).toBeVisible()
+    await act(async () => { finishImport({ imported: 1, total: 1, failedIndex: null, cause: null }) })
   })
 })

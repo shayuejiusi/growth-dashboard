@@ -47,11 +47,22 @@ async function csrfToken(): Promise<string> {
   return csrfRequest
 }
 
+function isNativeBody(body: unknown): body is BodyInit {
+  return typeof body === "string"
+    || body instanceof Blob
+    || body instanceof FormData
+    || body instanceof URLSearchParams
+    || body instanceof ArrayBuffer
+    || Object.prototype.toString.call(body) === "[object ArrayBuffer]"
+    || ArrayBuffer.isView(body)
+    || (typeof ReadableStream !== "undefined" && body instanceof ReadableStream)
+}
+
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const method = options.method ?? "GET"
   const headers: Record<string, string> = { Accept: "application/json" }
-  const isFormData = options.body instanceof FormData
-  if (options.body !== undefined && !isFormData) headers["Content-Type"] = "application/json"
+  const nativeBody = options.body !== undefined && isNativeBody(options.body)
+  if (options.body !== undefined && !nativeBody) headers["Content-Type"] = "application/json"
   if (method !== "GET" && !options.skipCsrf) {
     headers["X-CSRF-TOKEN"] = await csrfToken()
   }
@@ -61,7 +72,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
     headers,
     credentials: "include",
     signal: options.signal,
-    body: options.body === undefined ? undefined : options.body instanceof FormData ? options.body : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : isNativeBody(options.body) ? options.body : JSON.stringify(options.body),
   })
   if (response.status === 401 && !options.skipUnauthorizedEvent) emitUnauthorized()
   return parseApiResponse<T>(response, path)

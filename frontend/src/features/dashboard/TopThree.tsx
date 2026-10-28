@@ -13,9 +13,10 @@ interface TopThreeProps {
   tasks: TaskItem[]
   onComplete: (id: string) => void
   completingId?: string
+  writePending?: boolean
 }
 
-export function TopThree({ tasks, onComplete, completingId }: TopThreeProps) {
+export function TopThree({ tasks, onComplete, completingId, writePending = false }: TopThreeProps) {
   return (
     <Card>
       <CardHeader>
@@ -59,7 +60,7 @@ export function TopThree({ tasks, onComplete, completingId }: TopThreeProps) {
                   variant="outline"
                   size="sm"
                   className="w-full sm:w-auto"
-                  disabled={completingId === task.id}
+                  disabled={writePending || completingId === task.id}
                   aria-label={`完成“${task.title}”`}
                   onClick={() => onComplete(task.id)}
                 >

@@ -1,5 +1,5 @@
 import { FileUp, LoaderCircle } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -7,22 +7,33 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { extractDocumentText, recognizeTasksLocally, validateImportFile, type TaskDraft } from "./ai-api"
+import { extractDocumentText, recognizeTasksLocally, validateImportFile, type BatchImportResult, type TaskDraft } from "./ai-api"
 import { ImportPreview } from "./ImportPreview"
 
 interface DocumentImportProps {
   writePending?: boolean
-  onImport: (drafts: TaskDraft[]) => Promise<void>
+  onDirtyChange?: (dirty: boolean) => void
+  onSubmittingChange?: (submitting: boolean) => void
+  onImport: (drafts: TaskDraft[]) => Promise<BatchImportResult>
 }
 
-export function DocumentImport({ writePending = false, onImport }: DocumentImportProps) {
+export function DocumentImport({ writePending = false, onDirtyChange, onSubmittingChange, onImport }: DocumentImportProps) {
   const [kind, setKind] = useState<"doc" | "official">("doc")
   const [text, setText] = useState("")
   const [drafts, setDrafts] = useState<TaskDraft[] | null>(null)
   const [extracting, setExtracting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [fileMessage, setFileMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    onDirtyChange?.(text.trim().length > 0 || drafts !== null)
+  }, [drafts, onDirtyChange, text])
+
+  useEffect(() => {
+    onSubmittingChange?.(extracting || importing)
+  }, [extracting, importing, onSubmittingChange])
 
   function updateText(value: string) {
     setText(value)
@@ -100,7 +111,7 @@ export function DocumentImport({ writePending = false, onImport }: DocumentImpor
           id="document-file"
           type="file"
           accept=".txt,.md,.csv,.docx,.xlsx"
-          disabled={extracting}
+          disabled={extracting || importing}
           onChange={(event) => void extract(event.target.files?.[0])}
         />
         <p className="text-xs text-muted-foreground">支持 .txt、.md、.csv、.docx、.xlsx，单个文件不超过 10MB。</p>
@@ -111,11 +122,11 @@ export function DocumentImport({ writePending = false, onImport }: DocumentImpor
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       <div className="grid gap-2 sm:grid-cols-2">
         <Button type="button" variant="outline" disabled title="AI 提示词和 API 暂未配置">AI 智能分析（暂未配置）</Button>
-        <Button type="button" variant="secondary" disabled={extracting || !text.trim()} onClick={recognize}><FileUp aria-hidden="true" />本地快速识别（简单规则）</Button>
+        <Button type="button" variant="secondary" disabled={extracting || importing || !text.trim()} onClick={recognize}><FileUp aria-hidden="true" />本地快速识别（简单规则）</Button>
       </div>
-      <p className="text-xs text-muted-foreground">本地快速识别仅按非空行拆分并提取行内日期，不调用 AI，也不评估能力维度。</p>
+      <p className="text-xs text-muted-foreground">本地快速识别仅按非空行拆分并提取行内真实日期，不调用 AI，也不评估能力维度。</p>
 
-      {drafts ? <ImportPreview key={JSON.stringify(drafts)} drafts={drafts} writePending={writePending} onImport={onImport} /> : null}
+      {drafts ? <ImportPreview key={JSON.stringify(drafts)} drafts={drafts} writePending={writePending} onSubmittingChange={setImporting} onImport={onImport} /> : null}
     </div>
   )
 }

@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MemoryRouter } from "react-router"
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { clearCsrfToken } from "@/lib/api/client"
+import { TasksPage } from "@/features/tasks/TasksPage"
 import { DashboardPage } from "./DashboardPage"
 
 const task = {
@@ -286,5 +287,56 @@ describe("驾驶舱", () => {
     expect(await screen.findByText("任务完成失败，请稍后重试")).toBeVisible()
     expect(button).toBeEnabled()
     expect(screen.queryByText("任务已完成")).not.toBeInTheDocument()
+  })
+
+  it("文档导入 pending 时跨页快捷完成仍互斥，查询不受锁影响", async () => {
+    mockApi()
+    let finishImport!: (response: Response) => void
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === "/api/auth/csrf") return jsonResponse({ csrfToken: "test-csrf" })
+      if (path === "/api/tasks" && (init?.method ?? "GET") === "GET") return jsonResponse([])
+      if (path === "/api/tasks" && init?.method === "POST") return new Promise<Response>((resolve) => { finishImport = resolve })
+      if (path === "/api/dashboard") return jsonResponse(dashboard)
+      if (path === "/api/ai/status") return jsonResponse({ remoteConfigured: false, provider: "本地规则引擎", hint: "" })
+      if (path === "/api/tasks/task-1/complete") return jsonResponse({ ...task, status: "DONE" })
+      return jsonResponse({ message: `未知请求 ${init?.method ?? "GET"} ${path}` }, 500)
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    let navigate!: ReturnType<typeof useNavigate>
+    function NavigationBridge() {
+      navigate = useNavigate()
+      return null
+    }
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/tasks"]}>
+          <NavigationBridge />
+          <Routes>
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+          </Routes>
+        </MemoryRouter>
+        <Toaster theme="light" />
+      </QueryClientProvider>,
+    )
+    await user.click(await screen.findByRole("button", { name: "快速新建" }))
+    await user.click(screen.getByRole("tab", { name: "文档导入" }))
+    await user.type(screen.getByLabelText("文本内容"), "跨页导入")
+    await user.click(screen.getByRole("button", { name: "本地快速识别（简单规则）" }))
+    await user.click(screen.getByRole("button", { name: "导入所选任务（1 项）" }))
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([path, init]) => path === "/api/tasks" && init?.method === "POST")).toBe(true))
+
+    act(() => navigate("/dashboard"))
+    const completeButton = await screen.findByRole("button", { name: "完成“完成讲话稿”" })
+    expect(completeButton).toBeDisabled()
+    await user.click(completeButton)
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === "/api/tasks/task-1/complete")).toHaveLength(0)
+
+    await act(async () => { finishImport(jsonResponse({ ...task, id: "imported", title: "跨页导入" })) })
+    await waitFor(() => expect(screen.getByRole("button", { name: "完成“完成讲话稿”" })).toBeEnabled())
+    await user.click(screen.getByRole("button", { name: "完成“完成讲话稿”" }))
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === "/api/tasks/task-1/complete")).toHaveLength(1))
   })
 })

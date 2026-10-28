@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { getTaskWriteCoordinator, useTaskWriteLocked } from "@/features/tasks/task-write-coordinator"
 import { completeTask, dashboardKeys, getAiStatus, getDashboard } from "./dashboard-api"
 import { StatCards } from "./StatCards"
 import { TopThree } from "./TopThree"
@@ -28,6 +29,8 @@ export function DashboardPage() {
   const location = useLocation()
   const denied = Boolean((location.state as { denied?: boolean } | null)?.denied)
   const queryClient = useQueryClient()
+  const taskWriteCoordinator = getTaskWriteCoordinator(queryClient)
+  const taskWritePending = useTaskWriteLocked(taskWriteCoordinator)
   const dashboard = useQuery({ queryKey: dashboardKeys.detail(), queryFn: ({ signal }) => getDashboard(signal) })
   const aiStatus = useQuery({ queryKey: ["ai", "status"], queryFn: ({ signal }) => getAiStatus(signal) })
   const aiRetrying = (aiStatus.isError && aiStatus.isRefetching)
@@ -44,6 +47,20 @@ export function DashboardPage() {
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "完成失败，请重试。"),
   })
+
+  async function completeTopTask(id: string) {
+    if (!taskWriteCoordinator.tryAcquire("mutation")) {
+      toast.info("另一项任务操作正在保存，请稍后重试")
+      return
+    }
+    try {
+      await complete.mutateAsync(id)
+    } catch {
+      // mutation 的 onError 已展示原因；写锁仍需覆盖其回调后再释放。
+    } finally {
+      taskWriteCoordinator.release("mutation")
+    }
+  }
 
   return (
     <section aria-labelledby="dashboard-title" className="space-y-6">
@@ -106,7 +123,8 @@ export function DashboardPage() {
           <TopThree
             tasks={dashboard.data.top3}
             completingId={complete.isPending ? complete.variables : undefined}
-            onComplete={(id) => complete.mutate(id)}
+            writePending={taskWritePending}
+            onComplete={(id) => void completeTopTask(id)}
           />
           <p className="text-right text-xs text-muted-foreground">数据更新于 {dashboard.data.generatedAt}</p>
         </>

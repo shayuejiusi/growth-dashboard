@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { useForm } from "react-hook-form"
 
 import { ConfirmDialog } from "@/components/feedback/ConfirmDialog"
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { TaskDraft } from "./ai-api"
+import type { BatchImportResult, TaskDraft } from "./ai-api"
 import { DocumentImport } from "./DocumentImport"
 import { emptyTaskForm, taskFormSchema, toTaskInput, type TaskFormValues } from "./task-form"
 import type { TaskInput } from "./types"
@@ -19,7 +19,7 @@ interface QuickAddDrawerProps {
   writePending?: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (input: TaskInput) => Promise<void>
-  onImport: (drafts: TaskDraft[]) => Promise<void>
+  onImport: (drafts: TaskDraft[]) => Promise<BatchImportResult>
 }
 
 const selectClassName = "border-input focus-visible:border-ring focus-visible:ring-ring/50 flex h-9 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-[3px]"
@@ -30,14 +30,26 @@ export function QuickAddDrawer({ open, writePending, onOpenChange, onSubmit, onI
 
 function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }: Omit<QuickAddDrawerProps, "open">) {
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [documentDirty, setDocumentDirty] = useState(false)
+  const [documentSubmitting, setDocumentSubmitting] = useState(false)
+  const [closeBlocked, setCloseBlocked] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const { register, handleSubmit, formState: { errors, isDirty, isSubmitting } } = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: emptyTaskForm,
   })
 
+  const handleDocumentSubmitting = useCallback((submitting: boolean) => {
+    setDocumentSubmitting(submitting)
+    if (!submitting) setCloseBlocked(false)
+  }, [])
+
   function requestClose() {
-    if (isDirty) setConfirmOpen(true)
+    if (isSubmitting || documentSubmitting) {
+      setCloseBlocked(true)
+      return
+    }
+    if (isDirty || documentDirty) setConfirmOpen(true)
     else onOpenChange(false)
   }
 
@@ -58,6 +70,9 @@ function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }
             <DialogTitle>快速新建任务</DialogTitle>
             <DialogDescription>直接记录事项，或从已有文档提取文本后校对导入。</DialogDescription>
           </DialogHeader>
+          {closeBlocked && (isSubmitting || documentSubmitting) ? (
+            <Alert><AlertDescription>{documentSubmitting ? "正在提取或导入，完成后才能关闭。" : "正在创建任务，完成后才能关闭。"}</AlertDescription></Alert>
+          ) : null}
           <Tabs defaultValue="manual">
             <TabsList className="grid w-full grid-cols-2" aria-label="快速新建方式">
               <TabsTrigger value="manual">手动填写</TabsTrigger>
@@ -90,7 +105,12 @@ function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }
               </DialogFooter>
             </TabsContent>
             <TabsContent value="document" className="pt-2">
-              <DocumentImport writePending={writePending} onImport={onImport} />
+              <DocumentImport
+                writePending={writePending}
+                onDirtyChange={setDocumentDirty}
+                onSubmittingChange={handleDocumentSubmitting}
+                onImport={onImport}
+              />
             </TabsContent>
           </Tabs>
         </DialogContent>
@@ -99,7 +119,7 @@ function QuickAddForm({ onOpenChange, onSubmit, onImport, writePending = false }
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="放弃未保存修改"
-        description="当前表单有尚未保存的内容，关闭后这些修改将丢失。"
+        description="当前表单或文档导入有尚未保存的内容，关闭后这些修改将丢失。"
         cancelText="继续编辑"
         actionText="放弃修改"
         destructive

@@ -100,3 +100,48 @@ tsc -b && vite build 通过。
 - 有意偏离原始 brief 的 `/api/ai/doc-to-tasks/import`：该接口只接收原文并重新识别，无法忠实导入用户编辑和勾选后的 TaskDraft，且本阶段要求 AI 路径留空。因此采用现有任务创建接口，保留写锁与查询失效语义。
 - 简单本地规则不是语义 AI，复杂段落需要用户在预览中校对；UI 已明确说明这一限制。
 - 后续若接回远程 AI，应在用户明确提供配置后另行实现，并补充可传递编辑后草稿的导入契约；本次未改动后端以为其预留兼容性。
+
+## Task 8 独立复核修复
+
+### 五项问题与修复
+
+1. **批量导入部分失败后的状态与重试**：新增 `BatchImportResult`，返回成功数、总数、首个失败索引及原因。第 N 项失败后，UI 明确显示“已成功 X、失败 1、未执行 Y”，预览移除已成功项，直接重试仅提交失败项和未执行项；部分成功与最终成功都会刷新任务相关缓存。
+2. **Dashboard 快捷完成未共享写锁**：快捷完成复用同一 QueryClient 的 `getTaskWriteCoordinator`，锁覆盖 mutation 及成功、失败回调；任意任务写操作 pending 时禁用 TopThree 完成按钮，查询不受写锁影响。
+3. **API client 误序列化原生 BodyInit**：FormData、Blob、ArrayBuffer（含跨 realm）、ArrayBufferView、URLSearchParams、字符串和 ReadableStream 均原样发送，且不附加 JSON Content-Type；普通 JSON 请求行为保持不变。
+4. **本地日期仅检查格式**：通过 UTC 年月日回验真实日历，拒绝不存在的日期；非法日期保留在标题中，且 `dueDate=null`。
+5. **文档导入可绕过脏状态确认**：DocumentImport 的文本与草稿纳入 QuickAddDrawer 的 dirty 关闭确认；文本提取或任务导入 pending 时阻止关闭并提示，提交状态通过 `useCallback` 同步并清理提示。
+
+### 复核 RED / GREEN
+
+先在旧实现上运行新增回归测试：
+
+```text
+npm test -- DocumentImport.test.tsx DashboardPage.test.tsx client.test.ts
+Test Files  3 failed (3)
+Tests  9 failed | 33 passed (42)
+```
+
+九项失败分别覆盖上述五类缺陷；跨页写锁用例另确认因完成按钮未禁用而失败。修复后运行同一命令：
+
+```text
+Test Files  3 passed (3)
+Tests  42 passed (42)
+```
+
+### 最终验证与自审
+
+在 `frontend` 目录执行：
+
+```text
+npm test
+Test Files  14 passed (14)
+Tests  164 passed (164)
+
+npm run lint
+通过，无 ESLint 错误。
+
+npm run build
+tsc -b && vite build 通过。
+```
+
+自审已覆盖 TasksPage 的任务 CRUD、状态切换、清空、导入、排序及 Dashboard 快捷完成，均使用共享写协调器；备份仅读取，不需要写锁。AI 仍保持未配置空态，未新增提示词、模型、API Key/Base，未调用 AI 分析或内容刷新接口。构建仅有既有第三方注释和主 JS 约 765.47 kB 的 chunk 警告，无构建错误；未启动或遗留后台服务，未 push。
