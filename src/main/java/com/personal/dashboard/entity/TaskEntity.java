@@ -76,11 +76,11 @@ public class TaskEntity {
     @Column(nullable = false, length = 10)
     private TaskItem.RepeatType repeatType = TaskItem.RepeatType.NONE;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "INTEGER DEFAULT 0 NOT NULL")
     private int position = 0;
 
     @Version
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "BIGINT DEFAULT 0 NOT NULL")
     private long version = 0;
 
     protected TaskEntity() {}
