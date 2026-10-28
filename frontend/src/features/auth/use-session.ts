@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 
+import { advanceAuthSession } from "@/lib/api/client"
 import { ApiError } from "@/lib/api/errors"
 import { fetchSession, login, logout, type LoginInput } from "./auth-api"
 
@@ -10,6 +11,14 @@ export interface SessionUser {
 }
 
 export const sessionQueryKey = ["auth", "session"] as const
+
+export function replaceSession(queryClient: QueryClient, user: SessionUser | null) {
+  // 作废旧代次响应，再同步取消并清空 Query 与 Mutation，最后才能建立新会话。
+  advanceAuthSession()
+  void queryClient.cancelQueries()
+  queryClient.clear()
+  queryClient.setQueryData(sessionQueryKey, user)
+}
 
 export function useSession() {
   return useQuery<SessionUser | null>({
@@ -32,7 +41,7 @@ export function useLogin() {
   return useMutation({
     mutationFn: (input: LoginInput) => login(input),
     onSuccess: (user) => {
-      queryClient.setQueryData(sessionQueryKey, user)
+      replaceSession(queryClient, user)
     },
   })
 }
@@ -42,7 +51,7 @@ export function useLogout() {
   return useMutation({
     mutationFn: logout,
     onSuccess: () => {
-      queryClient.setQueryData(sessionQueryKey, null)
+      replaceSession(queryClient, null)
     },
   })
 }

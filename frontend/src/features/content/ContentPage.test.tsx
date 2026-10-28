@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { MemoryRouter, useLocation, useNavigate } from "react-router"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ContentPage } from "./ContentPage"
@@ -32,9 +33,15 @@ const daily = {
   notice: "今日提示",
 }
 
-function renderPage() {
+function RepeatNavigation() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  return <button type="button" onClick={() => navigate(`${location.pathname}${location.search}`)}>重复定位内容</button>
+}
+
+function renderPage(entry = "/content") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={queryClient}><ContentPage /></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[entry]}><RepeatNavigation /><ContentPage /></MemoryRouter></QueryClientProvider>)
   return queryClient
 }
 
@@ -51,7 +58,7 @@ describe("每日精选", () => {
     })))
     const { container } = (() => {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      return render(<QueryClientProvider client={queryClient}><ContentPage /></QueryClientProvider>)
+      return render(<QueryClientProvider client={queryClient}><MemoryRouter><ContentPage /></MemoryRouter></QueryClientProvider>)
     })()
 
     const article = await screen.findByRole("link", { name: "精选文章" })
@@ -123,5 +130,46 @@ describe("每日精选", () => {
     expect(vi.mocked(fetch).mock.calls.filter(([path]) => String(path).includes("/daily/refresh"))).toHaveLength(0)
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
     expect(screen.getByRole("link", { name: "精选文章" })).toBeVisible()
+  })
+
+  it.each([
+    ["articles", "文章 & 复盘 / 指南"],
+    ["videos", "视频 & 复盘 / 指南"],
+  ] as const)("从搜索 item 参数定位并高亮编码标题对应的%s", async (section, title) => {
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      ...daily,
+      [section]: [{ ...daily.articles[0], title }],
+    })))
+    renderPage(`/content?item=${encodeURIComponent(title)}`)
+
+    const target = await screen.findByTestId("content-search-target")
+    expect(target).toHaveTextContent(title)
+    await waitFor(() => expect(target).toHaveFocus())
+    expect(target).toHaveAttribute("tabindex", "-1")
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "smooth" })
+  })
+
+  it("item 参数没有匹配内容时提示且不聚焦其他文章或视频", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(daily)))
+    renderPage(`/content?item=${encodeURIComponent("已删除的精选")}`)
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("未找到该精选内容")
+    expect(screen.queryByTestId("content-search-target")).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "精选文章" })).toBeVisible()
+  })
+
+  it("相同 item URL 重复导航会再次滚动并聚焦目标", async () => {
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(daily)))
+    const user = userEvent.setup()
+    renderPage("/content?item=%E7%B2%BE%E9%80%89%E6%96%87%E7%AB%A0")
+    const target = await screen.findByTestId("content-search-target")
+    await waitFor(() => expect(target).toHaveFocus())
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole("button", { name: "重复定位内容" }))
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(2))
+    expect(target).toHaveFocus()
   })
 })

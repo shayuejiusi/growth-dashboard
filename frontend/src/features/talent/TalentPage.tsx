@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FolderPlus, Pencil, Plus, Settings2, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
+import { useLocation, useSearchParams } from "react-router"
 import { toast } from "sonner"
 import { z } from "zod"
 
@@ -32,12 +33,31 @@ interface MemberOption extends Member { roster: string }
 
 export function TalentPage() {
   const queryClient = useQueryClient()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const personId = searchParams.get("person")
+  const personRequestKey = personId ? location.key : null
   const boardQuery = useQuery({ queryKey: talentKeys.board(), queryFn: ({ signal }) => getTalentBoard(signal) })
   const [personForm, setPersonForm] = useState<PersonNote | null | "new">(null)
   const [rosterDrawer, setRosterDrawer] = useState<{ open: boolean; roster: string | null }>({ open: false, roster: null })
   const [deletingPerson, setDeletingPerson] = useState<PersonNote | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [handledPersonRequest, setHandledPersonRequest] = useState<string | null>(null)
   const board = boardQuery.data ?? { rosters: {}, people: [] }
   const members = flattenMembers(board)
+
+  if (personRequestKey && personRequestKey !== handledPersonRequest && boardQuery.data) {
+    setHandledPersonRequest(personRequestKey)
+    const target = boardQuery.data.people.find((person) => person.id === personId)
+    if (target) {
+      setLocationError(null)
+      setPersonForm(target)
+    } else {
+      setPersonForm(null)
+      setLocationError("未找到该人员观察记录，可能已删除。可继续浏览或重新搜索。")
+    }
+  }
+  if (!personRequestKey && locationError) setLocationError(null)
 
   useEffect(() => {
     document.title = "人才筛选 · 个人工作看板"
@@ -74,6 +94,7 @@ export function TalentPage() {
         </Button>
       </header>
 
+      {locationError ? <Alert variant="destructive"><AlertTitle>无法定位观察记录</AlertTitle><AlertDescription>{locationError}</AlertDescription></Alert> : null}
       {boardQuery.isPending ? <StatePanel status="loading" title="正在加载人才看板" className="min-h-72" /> : null}
       {boardQuery.isError ? (
         <StatePanel

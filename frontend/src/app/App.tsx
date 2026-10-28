@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigat
 
 import { StatePanel } from "@/components/feedback/StatePanel"
 import { LoginPage } from "@/features/auth/LoginPage"
-import { sessionQueryKey, useSession } from "@/features/auth/use-session"
+import { replaceSession, useSession } from "@/features/auth/use-session"
 import { AppShell } from "./AppShell"
 import { Providers } from "./providers"
 import { RequireRole } from "./RequireRole"
@@ -24,7 +24,7 @@ function UnauthorizedBoundary() {
 
   useEffect(() => {
     function handleUnauthorized() {
-      queryClient.setQueryData(sessionQueryKey, null)
+      replaceSession(queryClient, null)
       if (location.pathname !== "/login") {
         navigate("/login", {
           replace: true,

@@ -1,5 +1,4 @@
-import { api } from "@/lib/api/client"
-import { toApiError } from "@/lib/api/errors"
+import { api, apiBlob } from "@/lib/api/client"
 
 import type { Task, TaskInput } from "./types"
 
@@ -43,14 +42,6 @@ export function reorderTasks(tasks: Task[]) {
   })
 }
 
-export async function exportTasks(signal?: AbortSignal) {
-  const path = "/api/tasks/export"
-  const response = await fetch(path, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    credentials: "include",
-    signal,
-  })
-  if (!response.ok) throw await toApiError(response, path)
-  return response.blob()
+export function exportTasks(signal?: AbortSignal) {
+  return apiBlob("/api/tasks/export", signal)
 }

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { clearCsrfToken } from "@/lib/api/client"
+import { clearCsrfToken, resetUnauthorized } from "@/lib/api/client"
 import { TasksPage } from "./TasksPage"
 import type { Task, TaskInput } from "./types"
 
@@ -294,6 +294,24 @@ describe("任务管理", () => {
     expect(exportCall?.[1]).toMatchObject({ credentials: "include" })
     expect(String(exportCall?.[0])).not.toMatch(/token|session/i)
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:task-backup")
+  })
+
+  it("备份接口 401 也进入统一会话失效边界", async () => {
+    resetUnauthorized()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/tasks/export") return jsonResponse({ message: "会话已过期" }, 401)
+      return jsonResponse([])
+    }))
+    const listener = vi.fn()
+    window.addEventListener("auth:unauthorized", listener)
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole("heading", { name: "任务管理" })
+
+    await user.click(screen.getByRole("button", { name: "备份任务" }))
+    expect(await screen.findByText(/备份失败/)).toBeVisible()
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.removeEventListener("auth:unauthorized", listener)
   })
 
   it("延迟排序中禁止删除、清空、完成、编辑和新增，失败后缓存保持一致", async () => {

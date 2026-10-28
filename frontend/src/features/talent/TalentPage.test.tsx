@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { MemoryRouter, useLocation, useNavigate } from "react-router"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -60,11 +61,20 @@ function mockApi(initial: TalentBoard = board) {
   }))
 }
 
-function renderPage() {
+function RepeatNavigation() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  return <button type="button" onClick={() => navigate(`${location.pathname}${location.search}`)}>重复定位人员</button>
+}
+
+function renderPage(entry = "/talent") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider><TalentPage /><Toaster theme="light" /></TooltipProvider>
+      <MemoryRouter initialEntries={[entry]}>
+        <RepeatNavigation />
+        <TooltipProvider><TalentPage /><Toaster theme="light" /></TooltipProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   return queryClient
@@ -236,5 +246,36 @@ describe("人才筛选", () => {
     expect(await screen.findByRole("alertdialog", { name: "放弃未保存修改" })).toBeVisible()
     await user.click(screen.getByRole("button", { name: "继续编辑" }))
     expect(screen.getByLabelText("成员姓名")).toHaveValue("未保存成员")
+  })
+
+  it("从搜索 person 参数在数据加载后打开编码 ID 对应的观察记录", async () => {
+    const target = { ...person(2, 3), id: "记录 / A&B", name: "目标成员" }
+    mockApi({ ...board, people: [...board.people, target] })
+    renderPage(`/talent?person=${encodeURIComponent(target.id)}`)
+
+    const dialog = await screen.findByRole("dialog", { name: "编辑观察记录" })
+    expect(dialog).toHaveTextContent("目标成员 · 教师组")
+    expect(within(dialog).getByLabelText("观察记录")).toHaveValue("观察内容")
+  })
+
+  it("person 参数不存在或记录已删除时提示且不打开其他记录", async () => {
+    mockApi()
+    renderPage(`/talent?person=${encodeURIComponent("已经删除 / 的记录")}`)
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("未找到该人员观察记录")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "编辑成员11的观察记录" })).toBeVisible()
+  })
+
+  it("相同 person URL 重复导航会在关闭后重新打开正确记录", async () => {
+    mockApi()
+    const user = userEvent.setup()
+    renderPage("/talent?person=person-2-3")
+    await screen.findByRole("dialog", { name: "编辑观察记录" })
+    await user.click(screen.getByRole("button", { name: "关闭编辑观察记录" }))
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "重复定位人员" }))
+    expect(await screen.findByRole("dialog", { name: "编辑观察记录" })).toHaveTextContent("成员23 · 教师组")
   })
 })

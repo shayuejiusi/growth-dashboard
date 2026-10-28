@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { BookOpen, ExternalLink, Play, RefreshCw } from "lucide-react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
+import { useLocation, useSearchParams } from "react-router"
 
 import { StatePanel } from "@/components/feedback/StatePanel"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -18,10 +19,15 @@ function safeExternalUrl(value: string): string | null {
   }
 }
 
-function ContentCard({ item }: { item: ContentItem }) {
+function ContentCard({ item, target = false }: { item: ContentItem; target?: boolean }) {
   const url = safeExternalUrl(item.url)
   return (
-    <Card>
+    <Card
+      id={target ? "content-search-target" : undefined}
+      data-testid={target ? "content-search-target" : undefined}
+      tabIndex={target ? -1 : undefined}
+      className={target ? "ring-2 ring-primary ring-offset-2 outline-none" : undefined}
+    >
       <CardHeader>
         <CardTitle className="text-base leading-6">
           {url ? (
@@ -43,12 +49,12 @@ function ContentCard({ item }: { item: ContentItem }) {
   )
 }
 
-function ContentSection({ title, items, kind }: { title: string; items: ContentItem[]; kind: "article" | "video" }) {
+function ContentSection({ title, items, kind, targetItem }: { title: string; items: ContentItem[]; kind: "article" | "video"; targetItem?: ContentItem }) {
   const Icon = kind === "article" ? BookOpen : Play
   return (
     <section aria-labelledby={`content-${kind}`} className="space-y-4">
       <h2 id={`content-${kind}`} className="flex items-center gap-2 text-lg font-semibold"><Icon className="size-5 text-primary" aria-hidden="true" />{title}</h2>
-      {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((item) => <ContentCard key={`${item.title}-${item.url}`} item={item} />)}</div> : (
+      {items.length ? <div className="grid gap-4 lg:grid-cols-2">{items.map((item) => <ContentCard key={`${item.title}-${item.url}`} item={item} target={item === targetItem} />)}</div> : (
         <StatePanel status="empty" title={`暂无${title}`} className="min-h-32 rounded-lg border" />
       )}
     </section>
@@ -56,13 +62,38 @@ function ContentSection({ title, items, kind }: { title: string; items: ContentI
 }
 
 export function ContentPage() {
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const itemTitle = searchParams.get("item")
+  const itemRequestKey = itemTitle ? location.key : null
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [handledItemRequest, setHandledItemRequest] = useState<string | null>(null)
   const dailyQuery = useQuery({ queryKey: contentKeys.daily(), queryFn: ({ signal }) => getDailyContent(signal) })
   const content = dailyQuery.data
+  const targetItem = content && itemTitle
+    ? [...content.articles, ...content.videos].find((item) => item.title === itemTitle)
+    : undefined
   const empty = content === null || (content !== undefined && content.articles.length === 0 && content.videos.length === 0)
+
+  if (itemRequestKey && itemRequestKey !== handledItemRequest && content) {
+    setHandledItemRequest(itemRequestKey)
+    setLocationError(targetItem ? null : "未找到该精选内容，可能已更新或删除。可继续浏览或重新搜索。")
+  }
+  if (!itemRequestKey && locationError) setLocationError(null)
 
   useEffect(() => {
     document.title = "每日精选 · 个人工作看板"
   }, [])
+
+  useEffect(() => {
+    if (!itemRequestKey || !targetItem) return
+    const frame = requestAnimationFrame(() => {
+      const card = document.getElementById("content-search-target")
+      card?.scrollIntoView({ block: "center", behavior: "smooth" })
+      card?.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [itemRequestKey, targetItem])
 
   return (
     <section aria-labelledby="content-title" className="space-y-6">
@@ -85,6 +116,7 @@ export function ContentPage() {
         <p className="mt-1 text-muted-foreground">AI 提示词和 API 暂未配置，不会请求生成新精选；当前内容来自已有每日精选。</p>
       </div>
 
+      {locationError ? <Alert variant="destructive"><AlertTitle>无法定位精选内容</AlertTitle><AlertDescription>{locationError}</AlertDescription></Alert> : null}
       {dailyQuery.isPending ? <StatePanel status="loading" title="正在加载每日精选" className="min-h-72" /> : null}
       {dailyQuery.isError && !content ? (
         <StatePanel status="error" title="每日精选加载失败" description={dailyQuery.error instanceof Error ? dailyQuery.error.message : "请稍后重试。"} onRetry={() => void dailyQuery.refetch()} className="min-h-72" />
@@ -99,8 +131,8 @@ export function ContentPage() {
             <span>精选日期：{content.date}</span>
             {content.notice ? <span>{content.notice}</span> : null}
           </div>
-          <ContentSection title="文章" items={content.articles} kind="article" />
-          <ContentSection title="视频" items={content.videos} kind="video" />
+          <ContentSection title="文章" items={content.articles} kind="article" targetItem={targetItem} />
+          <ContentSection title="视频" items={content.videos} kind="video" targetItem={targetItem} />
         </>
       ) : null}
     </section>
