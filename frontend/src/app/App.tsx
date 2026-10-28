@@ -3,12 +3,14 @@ import { useEffect } from "react"
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router"
 
 import { StatePanel } from "@/components/feedback/StatePanel"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { UsersPage } from "@/features/admin/UsersPage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { sessionQueryKey, useSession } from "@/features/auth/use-session"
 import { ContentPage } from "@/features/content/ContentPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { RemindersPage } from "@/features/reminders/RemindersPage"
+import { ReviewPage } from "@/features/review/ReviewPage"
+import { TalentPage } from "@/features/talent/TalentPage"
 import { TasksPage } from "@/features/tasks/TasksPage"
 import { AppShell } from "./AppShell"
 import { Providers } from "./providers"
@@ -45,23 +47,6 @@ function RequireAuth() {
   return <Outlet />
 }
 
-function PageContent({ title, description }: { title: string; description: string }) {
-  return (
-    <section aria-labelledby="page-title" className="space-y-6">
-      <div>
-        <h1 id="page-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-      </div>
-      <Card>
-        <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
-        <CardContent>
-          <StatePanel status="empty" title="内容尚未接入" description="此业务模块将在后续阶段提供。" className="min-h-56" />
-        </CardContent>
-      </Card>
-    </section>
-  )
-}
-
 function AppRoutes() {
   return (
     <>
@@ -78,9 +63,9 @@ function AppRoutes() {
               <Route path="/content" element={<ContentPage />} />
             </Route>
             <Route element={<RequireRole maxLevel={1} />}>
-              <Route path="/admin/users" element={<PageContent title="账号管理" description="管理账号与权限等级。" />} />
-              <Route path="/review" element={<PageContent title="工作复盘" description="回顾阶段工作并沉淀经验。" />} />
-              <Route path="/talent" element={<PageContent title="人才筛选" description="查看人才筛选工作区。" />} />
+              <Route path="/admin/users" element={<UsersPage />} />
+              <Route path="/review" element={<ReviewPage />} />
+              <Route path="/talent" element={<TalentPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
