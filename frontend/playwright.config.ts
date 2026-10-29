@@ -27,9 +27,9 @@ export default defineConfig({
         DB_PASSWORD: "",
         FRONTEND_ORIGINS: "http://127.0.0.1:5173",
         COOKIE_SECURE: "false",
-        AI_BASE_URL: "",
-        AI_API_KEY: "",
-        AI_MODEL: "",
+        AI_BASE_URL: process.env.AI_BASE_URL ?? "",
+        AI_API_KEY: process.env.AI_API_KEY ?? "",
+        AI_MODEL: process.env.AI_MODEL ?? "",
       },
     },
     {

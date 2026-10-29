@@ -1,11 +1,18 @@
 import { api } from "@/lib/api/client"
 import type { TaskPriority } from "./types"
 
+export type TaskCategory = "德育" | "教学" | "行政"
+
 export interface TaskDraft {
   title: string
   priority: TaskPriority
   dueDate: string | null
   needReport: boolean
+  category: TaskCategory | null
+  sourceText?: string | null
+  confidence?: number | null
+  needsReview?: boolean
+  reviewReason?: string | null
 }
 
 export interface BatchImportResult {
@@ -36,6 +43,14 @@ export function extractDocumentText(file: File, signal?: AbortSignal) {
   return api<ExtractedText>("/api/ai/extract-text", { method: "POST", body, signal })
 }
 
+export function analyzeDocumentTasks(text: string, kind: "doc" | "official", signal?: AbortSignal) {
+  return api<TaskDraft[]>("/api/ai/doc-to-tasks", {
+    method: "POST",
+    body: { text, kind, mode: "ai" },
+    signal,
+  })
+}
+
 function validDate(yearText: string, monthText: string, dayText: string): string | null {
   const year = Number(yearText)
   const month = Number(monthText)
@@ -55,6 +70,6 @@ export function recognizeTasksLocally(text: string): TaskDraft[] {
     const dueDate = dateMatch ? validDate(dateMatch[1], dateMatch[2], dateMatch[3]) : null
     const title = (dateMatch && dueDate ? cleaned.replace(dateMatch[0], "").trim() : cleaned).slice(0, 255)
     if (!title) return []
-    return [{ title, priority: "P2" as const, dueDate, needReport: false }]
+    return [{ title, priority: "P2" as const, dueDate, needReport: false, category: null }]
   })
 }

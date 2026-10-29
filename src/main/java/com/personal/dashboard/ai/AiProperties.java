@@ -12,12 +12,12 @@ public class AiProperties {
 
     /** local 或 openai-compatible */
     private String provider = "openai-compatible";
-    /** OpenAI 兼容服务的 base url，如 https://api.openai.com/v1 */
-    private String baseUrl = "https://api.openai.com/v1";
+    /** OpenAI 兼容服务地址，默认使用阿里云百炼兼容模式 */
+    private String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
     /** API Key，为空时自动回退 local 规则引擎 */
     private String apiKey = "";
     /** 模型名称 */
-    private String model = "gpt-4o-mini";
+    private String model = "qwen3.8-flash";
     /** 请求超时（秒） */
     private int timeoutSeconds = 60;
 

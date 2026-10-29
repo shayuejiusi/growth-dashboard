@@ -51,9 +51,17 @@ public interface AiService {
 
     // ==================== DTO ====================
 
-    /** 从文本中提取的任务草稿 */
+    /** 从文本中提取的任务草稿；本地规则不包含 AI 分类与溯源信息。 */
     record TaskDraft(String title, String priority, String dueDate,
-                     boolean needReport, List<String> capabilities) {}
+                     boolean needReport, List<String> capabilities,
+                     String category, String sourceText, Double confidence,
+                     boolean needsReview, String reviewReason) {
+        public TaskDraft(String title, String priority, String dueDate,
+                         boolean needReport, List<String> capabilities) {
+            this(title, priority, dueDate, needReport, capabilities,
+                    null, null, null, false, null);
+        }
+    }
 
     /** 能力评估上下文：任务统计 */
     record CapabilityContext(Map<String, Object> taskStats,

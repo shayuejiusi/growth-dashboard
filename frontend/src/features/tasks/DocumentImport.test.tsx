@@ -117,24 +117,103 @@ describe("文档提取与本地快速识别", () => {
     await user.click(screen.getByRole("button", { name: "导入所选任务（1 项）" }))
 
     await waitFor(() => expect(onImport).toHaveBeenCalledWith([
-      { title: "已编辑周报", priority: "P0", dueDate: "2026-11-01", needReport: false },
+      { title: "已编辑周报", priority: "P0", dueDate: "2026-11-01", needReport: false, category: null },
     ]))
     expect(vi.mocked(fetch).mock.calls.filter(([path]) => String(path).includes("doc-to-tasks"))).toHaveLength(0)
   })
 
-  it("AI 分析保留暂未配置空态，点击不会发送任何远程 AI 请求", async () => {
+  it("AI 分析按三分类展示，允许复核编辑并保留溯源信息导入", async () => {
+    const drafts = [
+      { title: "完成心理健康排查", priority: "P0", dueDate: "2026-10-30", needReport: true, category: "德育", sourceText: "完成心理健康排查并报送", confidence: 0.95, needsReview: false, reviewReason: null },
+      { title: "提交考试质量分析", priority: "P1", dueDate: "2026-11-02", needReport: true, category: "教学", sourceText: "提交期中考试质量分析", confidence: 0.72, needsReview: true, reviewReason: "日期与分类需要复核" },
+      { title: "汇总值班表", priority: "P2", dueDate: null, needReport: false, category: "行政", sourceText: "汇总下周值班表", confidence: 0.9, needsReview: false, reviewReason: null },
+    ]
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input) === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (String(input) === "/api/ai/doc-to-tasks") {
+        expect(JSON.parse(String(init?.body))).toEqual({ text: "学校通知正文", kind: "official", mode: "ai" })
+        return jsonResponse(drafts)
+      }
+      return jsonResponse({ message: "未 mock 的接口" }, 500)
+    })
+    const onImport = vi.fn().mockResolvedValue({ imported: 3, total: 3, failedIndex: null, cause: null })
+    const user = userEvent.setup()
+    renderDrawer(onImport)
+    await openDocumentImport(user)
+    await user.click(screen.getByRole("tab", { name: "收文" }))
+    await user.type(screen.getByLabelText("文本内容"), "学校通知正文")
+
+    await user.click(screen.getByRole("button", { name: "AI 智能分析" }))
+
+    expect(await screen.findByRole("heading", { name: "德育（1 项）" })).toBeVisible()
+    expect(screen.getByRole("heading", { name: "教学（1 项）" })).toBeVisible()
+    expect(screen.getByRole("heading", { name: "行政（1 项）" })).toBeVisible()
+    expect(screen.getByText("日期与分类需要复核")).toBeVisible()
+    await user.click(screen.getAllByText("查看原文依据")[0])
+    expect(screen.getByText("完成心理健康排查并报送")).toBeVisible()
+    await user.selectOptions(screen.getByLabelText("任务 1 工作分类"), "行政")
+    await user.click(screen.getByLabelText("任务 1 需要上报"))
+    await user.click(screen.getByRole("button", { name: "导入所选任务（3 项）" }))
+
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith([
+      { ...drafts[0], category: "行政", needReport: false },
+      drafts[1],
+      drafts[2],
+    ]))
+  })
+
+  it("AI 空结果显示明确提示且不创建空预览", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input) === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (String(input) === "/api/ai/doc-to-tasks") return jsonResponse([])
+      return jsonResponse({}, 500)
+    })
     const user = userEvent.setup()
     renderDrawer()
     await openDocumentImport(user)
-    await user.type(screen.getByLabelText("文本内容"), "整理会议纪要")
-    const aiButton = screen.getByRole("button", { name: "AI 智能分析（暂未配置）" })
+    await user.type(screen.getByLabelText("文本内容"), "没有任务的背景介绍")
+    await user.click(screen.getByRole("button", { name: "AI 智能分析" }))
 
-    expect(aiButton).toBeDisabled()
-    expect(screen.getByText(/AI 提示词和 API 暂未配置/)).toBeVisible()
-    await user.click(aiButton)
+    expect(await screen.findByRole("alert")).toHaveTextContent("未识别到可创建的待办")
+    expect(screen.queryByLabelText("导入预览")).not.toBeInTheDocument()
+  })
 
-    expect(fetch).not.toHaveBeenCalled()
-    expect(screen.queryByText(/AI 分析结果/)).not.toBeInTheDocument()
+  it("AI 请求失败显示错误且不伪造成本地分析结果", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input) === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (String(input) === "/api/ai/doc-to-tasks") return jsonResponse({ message: "AI 服务暂时不可用" }, 500)
+      return jsonResponse({}, 500)
+    })
+    const user = userEvent.setup()
+    renderDrawer()
+    await openDocumentImport(user)
+    await user.type(screen.getByLabelText("文本内容"), "学校通知正文")
+    await user.click(screen.getByRole("button", { name: "AI 智能分析" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("AI 服务暂时不可用")
+    expect(screen.queryByLabelText("导入预览")).not.toBeInTheDocument()
+  })
+
+  it("AI 分析中阻止误关闭，完成后恢复操作", async () => {
+    let finishAnalysis!: (response: Response) => void
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input) === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" })
+      if (String(input) === "/api/ai/doc-to-tasks") return new Promise<Response>((resolve) => { finishAnalysis = resolve })
+      return jsonResponse({}, 500)
+    })
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    render(<QuickAddDrawer open onOpenChange={onOpenChange} onSubmit={vi.fn()} onImport={vi.fn()} />)
+    await openDocumentImport(user)
+    await user.type(screen.getByLabelText("文本内容"), "学校通知正文")
+    await user.click(screen.getByRole("button", { name: "AI 智能分析" }))
+    await screen.findByRole("button", { name: "正在分析…" })
+
+    await user.click(screen.getByRole("button", { name: "关闭" }))
+
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(screen.getByRole("dialog")).toBeVisible()
+    await act(async () => { finishAnalysis(jsonResponse([])) })
   })
 
   it("任务页导入复用任务写入并在成功后失效任务查询", async () => {
@@ -397,9 +476,9 @@ describe("文档提取与本地快速识别", () => {
     const { recognizeTasksLocally } = await import("./ai-api")
 
     expect(recognizeTasksLocally("0000-01-01 元年\n0099-12-31 九十九年\n0100-02-28 一百年")).toEqual([
-      { title: "元年", priority: "P2", dueDate: "0000-01-01", needReport: false },
-      { title: "九十九年", priority: "P2", dueDate: "0099-12-31", needReport: false },
-      { title: "一百年", priority: "P2", dueDate: "0100-02-28", needReport: false },
+      { title: "元年", priority: "P2", dueDate: "0000-01-01", needReport: false, category: null },
+      { title: "九十九年", priority: "P2", dueDate: "0099-12-31", needReport: false, category: null },
+      { title: "一百年", priority: "P2", dueDate: "0100-02-28", needReport: false, category: null },
     ])
   })
 })

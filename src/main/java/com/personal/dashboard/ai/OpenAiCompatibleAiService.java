@@ -102,35 +102,52 @@ public class OpenAiCompatibleAiService implements AiService {
         return extractTasks(text, "doc");
     }
 
+    private record TaskDraftEnvelope(List<TaskDraft> tasks) {}
+
     @Override
     public List<TaskDraft> extractTasks(String text, String kind) {
-        String prompt;
-        if ("official".equals(kind)) {
-            // 收文 / 教育局文件：只提取需要落实的事项，带来文单位与截止时间
-            prompt = """
-                    下面是一段收文或教育局文件内容。只提取需要我校/本人落实的具体事项
-                    （报送材料、参会、迎检、反馈意见、报名等），忽略纯告知性内容。
-                    输出 JSON 数组，每个元素：
-                    {"title":"事项标题（带来文单位，如：基教科-报送自查报告）","priority":"P0|P1|P2",
-                     "dueDate":"yyyy-MM-dd或null（以文中截止时间为准）",
-                     "needReport":true|false,"capabilities":["关联能力维度"]}
-                    能力维度只能从以下选择：结构化表达、情绪中立沟通、主动预判、主动解决问题、
-                    跨部门协作、团队管理与任务分配、风险意识、人才识别与培养。
-                    文件内容：
-                    %s
-                    """.formatted(text);
-        } else {
-            prompt = """
-                    从下面这段文字中提取所有待办任务，输出 JSON 数组，每个元素：
-                    {"title":"任务标题","priority":"P0|P1|P2","dueDate":"yyyy-MM-dd或null",
-                     "needReport":true|false,"capabilities":["关联能力维度"]}
-                    能力维度只能从以下选择：结构化表达、情绪中立沟通、主动预判、主动解决问题、
-                    跨部门协作、团队管理与任务分配、风险意识、人才识别与培养。
-                    文字内容：
-                    %s
-                    """.formatted(text);
+        TaskDraftEnvelope envelope = chat(SchoolTaskPrompt.forDocument(text, kind), new TypeReference<>() {});
+        if (envelope == null || envelope.tasks() == null) {
+            throw new AiCallException("AI 返回内容缺少 tasks 数组");
         }
-        return chat(prompt, new TypeReference<>() {});
+        return envelope.tasks().stream().map(this::validateTaskDraft).toList();
+    }
+
+    /** 不信任上游结构：进入预览前校验所有会影响任务入库的字段。 */
+    private TaskDraft validateTaskDraft(TaskDraft draft) {
+        if (draft == null) throw new AiCallException("AI 返回了空任务");
+        String title = draft.title() == null ? "" : draft.title().trim();
+        if (title.isEmpty() || title.length() > 255) {
+            throw new AiCallException("AI 返回的任务标题为空或超过 255 字");
+        }
+        if (!List.of("P0", "P1", "P2").contains(draft.priority())) {
+            throw new AiCallException("AI 返回了无效优先级");
+        }
+        if (!List.of("德育", "教学", "行政").contains(draft.category())) {
+            throw new AiCallException("AI 返回了无效工作分类");
+        }
+        if (draft.dueDate() != null) {
+            try {
+                if (!java.time.LocalDate.parse(draft.dueDate()).toString().equals(draft.dueDate())) {
+                    throw new AiCallException("AI 返回的截止日期格式不正确");
+                }
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new AiCallException("AI 返回了无效截止日期", e);
+            }
+        }
+        String sourceText = draft.sourceText() == null ? "" : draft.sourceText().trim();
+        if (sourceText.isEmpty()) throw new AiCallException("AI 返回的任务缺少原文依据");
+        Double confidence = draft.confidence();
+        if (confidence == null || confidence < 0 || confidence > 1) {
+            throw new AiCallException("AI 返回了无效置信度");
+        }
+        boolean needsReview = draft.needsReview() || confidence < 0.8;
+        String reviewReason = needsReview
+                ? (draft.reviewReason() == null || draft.reviewReason().isBlank()
+                    ? "AI 置信度较低，请复核分类、日期和任务要求。" : draft.reviewReason().trim())
+                : null;
+        return new TaskDraft(title, draft.priority(), draft.dueDate(), draft.needReport(),
+                List.of(), draft.category(), sourceText, confidence, needsReview, reviewReason);
     }
 
     @Override

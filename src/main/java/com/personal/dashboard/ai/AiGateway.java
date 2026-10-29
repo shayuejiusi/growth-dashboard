@@ -62,7 +62,12 @@ public class AiGateway implements AiService {
         if ("local".equalsIgnoreCase(mode)) {
             return local.extractTasks(text, kind);
         }
-        return route(s -> s.extractTasks(text, kind));
+        // 远程未配置或调用失败都必须如实反馈；离线能力由用户显式选择本地模式。
+        if (remote.isConfigured()) {
+            return remote.extractTasks(text, kind);
+        }
+        throw new OpenAiCompatibleAiService.AiCallException(
+                "AI 尚未配置，请配置服务端 API Key 或使用本地快速识别");
     }
 
     @Override

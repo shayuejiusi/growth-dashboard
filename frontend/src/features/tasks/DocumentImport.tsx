@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { extractDocumentText, recognizeTasksLocally, validateImportFile, type BatchImportResult, type TaskDraft } from "./ai-api"
+import { analyzeDocumentTasks, extractDocumentText, recognizeTasksLocally, validateImportFile, type BatchImportResult, type TaskDraft } from "./ai-api"
 import { ImportPreview } from "./ImportPreview"
 
 interface DocumentImportProps {
@@ -22,18 +22,20 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
   const [text, setText] = useState("")
   const [drafts, setDrafts] = useState<TaskDraft[] | null>(null)
   const [extracting, setExtracting] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [fileMessage, setFileMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const busy = extracting || analyzing || importing
 
   useEffect(() => {
     onDirtyChange?.(text.trim().length > 0 || drafts !== null)
   }, [drafts, onDirtyChange, text])
 
   useEffect(() => {
-    onSubmittingChange?.(extracting || importing)
-  }, [extracting, importing, onSubmittingChange])
+    onSubmittingChange?.(busy)
+  }, [busy, onSubmittingChange])
 
   useEffect(() => () => {
     onDirtyChange?.(false)
@@ -41,14 +43,14 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
   }, [onDirtyChange, onSubmittingChange])
 
   function updateText(value: string) {
-    if (extracting || importing) return
+    if (busy) return
     setText(value)
     setDrafts(null)
     setError(null)
   }
 
   async function extract(file: File | undefined) {
-    if (!file || extracting || importing) return
+    if (!file || busy) return
     setError(null)
     setFileMessage(null)
     setDrafts(null)
@@ -72,6 +74,26 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
     }
   }
 
+  async function analyze() {
+    if (!text.trim() || busy) return
+    setAnalyzing(true)
+    setError(null)
+    setFileMessage(null)
+    setDrafts(null)
+    try {
+      const recognized = await analyzeDocumentTasks(text.trim(), kind)
+      if (!recognized.length) {
+        setError("未识别到可创建的待办，请补充包含具体行动要求的文本。")
+        return
+      }
+      setDrafts(recognized)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "AI 分析失败，请稍后重试。")
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
   function recognize() {
     setError(null)
     const recognized = recognizeTasksLocally(text)
@@ -86,21 +108,21 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
   return (
     <div className="space-y-4">
       <Tabs value={kind} onValueChange={(value) => {
-        if (extracting || importing) return
+        if (busy) return
         setKind(value as "doc" | "official")
         setDrafts(null)
       }}>
         <TabsList className="grid w-full grid-cols-2" aria-label="导入文本类型">
-          <TabsTrigger value="doc" disabled={extracting || importing}>文档</TabsTrigger>
-          <TabsTrigger value="official" disabled={extracting || importing}>收文</TabsTrigger>
+          <TabsTrigger value="doc" disabled={busy}>文档</TabsTrigger>
+          <TabsTrigger value="official" disabled={busy}>收文</TabsTrigger>
         </TabsList>
         <TabsContent value="doc" className="pt-2 text-sm text-muted-foreground">适用于文档、会议纪要和普通工作材料。</TabsContent>
         <TabsContent value="official" className="pt-2 text-sm text-muted-foreground">适用于收文、通知或待落实文件，可在识别后校对任务。</TabsContent>
       </Tabs>
 
       <div className="rounded-lg border bg-card px-4 py-3 text-sm">
-        <p className="font-medium">AI 功能暂未配置</p>
-        <p className="mt-1 text-muted-foreground">AI 提示词和 API 暂未配置，不会请求远程分析，也不会生成或展示伪造的 AI 结果。</p>
+        <p className="font-medium">AI 智能拆解</p>
+        <p className="mt-1 text-muted-foreground">提取具体行动事项，逐条分为德育、教学或行政；确认预览后才创建任务。</p>
       </div>
 
       <div className="space-y-2">
@@ -109,8 +131,8 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
           id="document-text"
           className="min-h-32"
           value={text}
-          disabled={extracting || importing}
-          placeholder={kind === "official" ? "粘贴收文或通知正文，每个非空行可作为一项待办。" : "粘贴文本，或选择文件提取内容；每个非空行可作为一项待办。"}
+          disabled={busy}
+          placeholder={kind === "official" ? "粘贴收文或通知正文，AI 将提取需要落实的事项。" : "粘贴文本，或选择文件提取内容后进行 AI 分析。"}
           onChange={(event) => updateText(event.target.value)}
         />
       </div>
@@ -122,7 +144,7 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
           id="document-file"
           type="file"
           accept=".txt,.md,.csv,.docx,.xlsx"
-          disabled={extracting || importing}
+          disabled={busy}
           onChange={(event) => void extract(event.target.files?.[0])}
         />
         <p className="text-xs text-muted-foreground">支持 .txt、.md、.csv、.docx、.xlsx，单个文件不超过 10MB。</p>
@@ -132,8 +154,11 @@ export function DocumentImport({ writePending = false, onDirtyChange, onSubmitti
 
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       <div className="grid gap-2 sm:grid-cols-2">
-        <Button type="button" variant="outline" disabled title="AI 提示词和 API 暂未配置">AI 智能分析（暂未配置）</Button>
-        <Button type="button" variant="secondary" disabled={extracting || importing || !text.trim()} onClick={recognize}><FileUp aria-hidden="true" />本地快速识别（简单规则）</Button>
+        <Button type="button" variant="outline" disabled={busy || !text.trim()} onClick={() => void analyze()}>
+          {analyzing ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
+          {analyzing ? "正在分析…" : "AI 智能分析"}
+        </Button>
+        <Button type="button" variant="secondary" disabled={busy || !text.trim()} onClick={recognize}><FileUp aria-hidden="true" />本地快速识别（简单规则）</Button>
       </div>
       <p className="text-xs text-muted-foreground">本地快速识别仅按非空行拆分并提取行内真实日期，不调用 AI，也不评估能力维度。</p>
 
